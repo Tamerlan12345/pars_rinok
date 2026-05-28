@@ -1,0 +1,97 @@
+"""FastAPI application entrypoint for Centras Tokenizer."""
+from __future__ import annotations
+
+import os
+
+import structlog
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from app.config import get_settings
+from app.database import init_db
+from app.middleware.audit import AuditMiddleware
+from app.middleware.rate_limiter import setup_rate_limiter
+from app.routers import analysis, auth, health, logs, market, news
+
+logger = structlog.get_logger("centras.main")
+
+settings = get_settings()
+
+app = FastAPI(
+    title="Centras Tokenizer API",
+    description=(
+        "Financial intelligence platform — OHLCV tokenization + Gemini AI analysis. "
+        "Inspired by Kronos (NeurIPS 2024) hierarchical discretization concept."
+    ),
+    version="1.0.0",
+    docs_url="/docs" if not settings.is_production else None,
+    redoc_url="/redoc" if not settings.is_production else None,
+)
+
+# -------------------------------------------------------------------
+# CORS
+# -------------------------------------------------------------------
+cors_origins = settings.cors_origins
+if settings.environment == "development":
+    # In dev, allow all origins for easy local testing
+    cors_origins = ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=cors_origins != ["*"],  # credentials not allowed with wildcard
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# -------------------------------------------------------------------
+# Rate limiting
+# -------------------------------------------------------------------
+setup_rate_limiter(app)
+
+# -------------------------------------------------------------------
+# Request audit logging
+# -------------------------------------------------------------------
+app.add_middleware(AuditMiddleware)
+
+# -------------------------------------------------------------------
+# Routers
+# -------------------------------------------------------------------
+app.include_router(health.router)                    # GET /health
+app.include_router(auth.router, prefix="/api")       # POST /api/auth/login
+app.include_router(market.router, prefix="/api")     # GET /api/market/...
+app.include_router(analysis.router, prefix="/api")   # POST /api/analysis/...
+app.include_router(news.router, prefix="/api")       # GET /api/news/...
+app.include_router(logs.router, prefix="/api")       # GET /api/logs/...
+
+
+# -------------------------------------------------------------------
+# Lifecycle
+# -------------------------------------------------------------------
+@app.on_event("startup")
+async def startup() -> None:
+    await init_db()
+    logger.info(
+        "centras_startup",
+        environment=settings.environment,
+        gemini_configured=bool(settings.gemini_api_key),
+        database_url=settings.database_url[:40] + "...",  # truncated for safety
+    )
+
+
+@app.on_event("shutdown")
+async def shutdown() -> None:
+    logger.info("centras_shutdown")
+
+
+# -------------------------------------------------------------------
+# Global exception handlers
+# -------------------------------------------------------------------
+@app.exception_handler(500)
+async def internal_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.error("unhandled_exception", path=request.url.path, error=str(exc))
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error. Check logs for details."},
+    )
