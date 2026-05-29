@@ -129,13 +129,21 @@ async def log_event(
         )
 
 
-async def get_recent_logs(db: AsyncSession, limit: int = 50) -> list[Any]:
+async def get_recent_logs(
+    db: AsyncSession,
+    limit: int = 50,
+    level_filter: str = "ALL",
+) -> list[Any]:
     """
     Retrieve the most recent AuditLog entries ordered by timestamp descending.
 
     Args:
-        db:    Async DB session.
-        limit: Maximum number of rows to return.
+        db:           Async DB session.
+        limit:        Maximum number of rows to return.
+        level_filter: When not "ALL", only return entries whose level matches
+                      this value (case-insensitive).  Accepted values are the
+                      standard log levels: DEBUG, INFO, WARNING, ERROR, or the
+                      sentinel "ALL" to return every level.
 
     Returns:
         List of AuditLog ORM instances.
@@ -143,7 +151,10 @@ async def get_recent_logs(db: AsyncSession, limit: int = 50) -> list[Any]:
     from app.models.audit_log import AuditLog
 
     limit = max(1, min(limit, 500))  # guard against absurd limit values
-    result = await db.execute(
-        select(AuditLog).order_by(desc(AuditLog.timestamp)).limit(limit)
-    )
+    stmt = select(AuditLog).order_by(desc(AuditLog.timestamp)).limit(limit)
+
+    if level_filter and level_filter.upper() != "ALL":
+        stmt = stmt.where(AuditLog.level == level_filter.upper())
+
+    result = await db.execute(stmt)
     return list(result.scalars().all())
