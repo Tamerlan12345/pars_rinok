@@ -141,14 +141,23 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
       return
     }
 
-    // Normalize and sort
+    // Normalize, sort numerically, and deduplicate by time
     const sorted = [...candles].sort((a, b) => {
-      const ta = typeof a.time === 'string' ? a.time : String(a.time)
-      const tb = typeof b.time === 'string' ? b.time : String(b.time)
-      return ta < tb ? -1 : ta > tb ? 1 : 0
+      const ta = Number(a.time)
+      const tb = Number(b.time)
+      return ta - tb
     })
 
-    const ohlcv = sorted.map(c => ({
+    const uniqueSorted = []
+    let lastTime = null
+    for (const c of sorted) {
+      if (c.time !== lastTime) {
+        uniqueSorted.push(c)
+        lastTime = c.time
+      }
+    }
+
+    const ohlcv = uniqueSorted.map(c => ({
       time: c.time,
       open:  Number(c.open),
       high:  Number(c.high),
@@ -156,7 +165,7 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
       close: Number(c.close)
     }))
 
-    const volumes = sorted.map(c => ({
+    const volumes = uniqueSorted.map(c => ({
       time:  c.time,
       value: Number(c.volume) || 0,
       color: Number(c.close) >= Number(c.open)
