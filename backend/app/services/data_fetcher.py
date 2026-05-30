@@ -96,61 +96,93 @@ def _df_to_candles(df: "pandas.DataFrame") -> list[dict]:
     return candles
 
 
-def _fetch_via_stooq(ticker: str, period: str) -> list[dict]:
+def _fetch_via_yahoo_chart(ticker: str, period: str, interval: str) -> list[dict]:
     """
-    Fallback source: Stooq public CSV endpoint, fetched via urllib.
-    Free, no API key, no pandas_datareader — not blocked by cloud IPs.
-    Only provides daily granularity.
-
-    URL: https://stooq.com/q/d/l/?s={ticker}.us&d1=YYYYMMDD&d2=YYYYMMDD&i=d
+    Fallback source: Yahoo Finance Chart API via query2.finance.yahoo.com.
+    This endpoint differs from what yfinance uses and is often reachable from
+    cloud IPs where the yfinance data download is blocked.
+    Uses stdlib http.cookiejar — no extra dependencies.
     """
-    import csv
-    import io
+    import http.cookiejar
+    import json
     import urllib.request
-    from datetime import date, timedelta, timezone as tz
-
-    days = _period_to_days(period)
-    end = date.today()
-    start = end - timedelta(days=days)
-    d1 = start.strftime("%Y%m%d")
-    d2 = end.strftime("%Y%m%d")
-    # Stooq uses .us suffix for US-listed equities.
-    url = f"https://stooq.com/q/d/l/?s={ticker.lower()}.us&d1={d1}&d2={d2}&i=d"
+    from datetime import timezone as tz
 
     _UA = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/124.0.0.0 Safari/537.36"
     )
+    _HEADERS = {
+        "User-Agent": _UA,
+        "Accept": "application/json,text/plain,*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+    }
+
+    # Build an opener with a shared cookie jar so the consent cookie
+    # obtained from the homepage carries into the chart API request.
+    jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": _UA})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
+        prime_req = urllib.request.Request(
+            f"https://finance.yahoo.com/quote/{ticker}/",
+            headers=_HEADERS,
+        )
+        opener.open(prime_req, timeout=8)
     except Exception as exc:
-        logger.warning("Stooq HTTP fetch failed for %s: %s", ticker, exc)
+        logger.debug("Yahoo chart cookie prime failed (non-fatal): %s", exc)
+
+    url = (
+        f"https://query2.finance.yahoo.com/v8/finance/chart/{ticker}"
+        f"?range={period}&interval={interval}&includePrePost=false&events=div%2Csplits"
+    )
+    chart_req = urllib.request.Request(
+        url,
+        headers={**_HEADERS, "Referer": f"https://finance.yahoo.com/quote/{ticker}/"},
+    )
+
+    try:
+        resp = opener.open(chart_req, timeout=12)
+        data = json.loads(resp.read())
+    except Exception as exc:
+        logger.warning("Yahoo chart API request failed for %s: %s", ticker, exc)
         return []
 
-    # Stooq returns non-CSV text on failure (e.g. "No data").
-    if not raw.strip().startswith("Date"):
-        logger.warning("Stooq returned unexpected response for %s: %.80s", ticker, raw)
+    try:
+        result = data["chart"]["result"][0]
+        timestamps = result["timestamp"]
+        quote = result["indicators"]["quote"][0]
+        opens = quote.get("open") or []
+        highs = quote.get("high") or []
+        lows = quote.get("low") or []
+        closes = quote.get("close") or []
+        volumes = quote.get("volume") or []
+        # Use adjusted close when available.
+        try:
+            adj_closes = result["indicators"]["adjclose"][0].get("adjclose") or closes
+        except Exception:
+            adj_closes = closes
+    except (KeyError, IndexError, TypeError) as exc:
+        logger.warning("Yahoo chart API parse error for %s: %s", ticker, exc)
         return []
 
     candles: list[dict] = []
-    reader = csv.DictReader(io.StringIO(raw))
-    for row in reader:
+    for i, ts in enumerate(timestamps):
         try:
-            dt = datetime.strptime(row["Date"], "%Y-%m-%d").replace(tzinfo=tz.utc)
-            open_ = float(row["Open"])
-            high = float(row["High"])
-            low = float(row["Low"])
-            close = float(row["Close"])
-            volume = float(row.get("Volume") or 0)
-        except (KeyError, ValueError):
+            close = float((adj_closes[i] if i < len(adj_closes) else None) or closes[i] or 0)
+            open_ = float(opens[i] or 0) if i < len(opens) else 0.0
+            high = float(highs[i] or 0) if i < len(highs) else 0.0
+            low = float(lows[i] or 0) if i < len(lows) else 0.0
+            volume = float(volumes[i] or 0) if i < len(volumes) else 0.0
+        except (TypeError, ValueError):
             continue
         if close <= 0:
             continue
         candles.append({
-            "timestamp": dt,
+            "timestamp": datetime.fromtimestamp(ts, tz=tz.utc),
             "open": open_,
             "high": high,
             "low": low,
@@ -158,11 +190,8 @@ def _fetch_via_stooq(ticker: str, period: str) -> list[dict]:
             "volume": volume,
         })
 
-    # Stooq returns newest-first; sort ascending for charts.
-    candles.sort(key=lambda c: c["timestamp"])
-
     if not candles:
-        logger.warning("Stooq CSV parsed 0 candles for %s", ticker)
+        logger.warning("Yahoo chart API returned 0 candles for %s", ticker)
     return candles
 
 
@@ -172,9 +201,8 @@ def _fetch_ohlcv_sync(ticker: str, period: str, interval: str) -> list[dict]:
 
     Strategy:
       1. Try yfinance with a browser-impersonating session + primed cookie jar.
-      2. If yfinance returns empty (Yahoo blocks cloud ASNs), fall back to Stooq.
-         Stooq only provides daily bars, so intraday intervals silently degrade to
-         daily granularity on the fallback path.
+      2. If yfinance returns empty (Yahoo blocks cloud ASNs), fall back to 
+         direct Yahoo Chart API.
     """
     import yfinance as yf
 
@@ -191,10 +219,10 @@ def _fetch_ohlcv_sync(ticker: str, period: str, interval: str) -> list[dict]:
 
     # yfinance returned nothing — Yahoo is blocking this IP.
     logger.warning(
-        "yfinance empty for %s (%s/%s) — falling back to Stooq (daily only)",
+        "yfinance empty for %s (%s/%s) — falling back to Yahoo Chart API",
         ticker, period, interval,
     )
-    return _fetch_via_stooq(ticker, period)
+    return _fetch_via_yahoo_chart(ticker, period, interval)
 
 
 async def fetch_ohlcv(
