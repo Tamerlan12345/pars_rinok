@@ -56,26 +56,19 @@ def _make_yahoo_session() -> "requests.Session":
     return session
 
 
-def _fetch_ohlcv_sync(ticker: str, period: str, interval: str) -> list[dict]:
-    """
-    Blocking yfinance download — runs inside asyncio.to_thread().
-    Uses Ticker.history() (more reliable with a custom session than yf.download).
-    Returns a list of candle dicts; empty list on any error.
-    """
-    import yfinance as yf  # imported inside thread to avoid import-time side effects
+def _period_to_days(period: str) -> int:
+    """Convert yfinance period string to approximate number of calendar days."""
+    _map = {
+        "1d": 1, "5d": 5, "1mo": 31, "3mo": 92,
+        "6mo": 183, "1y": 365, "2y": 730, "5y": 1826, "10y": 3653,
+        "ytd": 365, "max": 3653,
+    }
+    return _map.get(period, 92)
 
-    session = _make_yahoo_session()
-    try:
-        t = yf.Ticker(ticker, session=session)
-        df = t.history(period=period, interval=interval, auto_adjust=True)
-    except Exception as exc:
-        logger.warning("yfinance fetch failed for %s (%s/%s): %s", ticker, period, interval, exc)
-        return []
 
-    if df is None or df.empty:
-        logger.warning("yfinance returned empty DataFrame for %s (%s/%s)", ticker, period, interval)
-        return []
-
+def _df_to_candles(df: "pandas.DataFrame") -> list[dict]:
+    """Convert a OHLCV DataFrame (any source) to candle dicts."""
+    from datetime import timezone as tz
     candles: list[dict] = []
     for ts, row in df.iterrows():
         try:
@@ -86,17 +79,12 @@ def _fetch_ohlcv_sync(ticker: str, period: str, interval: str) -> list[dict]:
             volume = float(row.get("Volume", 0) or 0)
         except (KeyError, TypeError, ValueError):
             continue
-
         if close <= 0:
-            # Skip corrupt/delisted rows.
             continue
-
-        # Normalize timestamp to UTC-aware datetime.
         if hasattr(ts, "tzinfo") and ts.tzinfo is not None:
             timestamp = ts.to_pydatetime()
         else:
-            timestamp = ts.to_pydatetime().replace(tzinfo=timezone.utc)
-
+            timestamp = ts.to_pydatetime().replace(tzinfo=tz.utc)
         candles.append({
             "timestamp": timestamp,
             "open": open_,
@@ -105,8 +93,63 @@ def _fetch_ohlcv_sync(ticker: str, period: str, interval: str) -> list[dict]:
             "close": close,
             "volume": volume,
         })
-
     return candles
+
+
+def _fetch_via_stooq(ticker: str, period: str) -> list[dict]:
+    """
+    Fallback source: Stooq via pandas_datareader.
+    Free, no API key, not blocked by cloud IPs.
+    Only supports daily granularity — intraday is not available.
+    """
+    from datetime import date, timedelta
+    import pandas_datareader.data as web
+
+    days = _period_to_days(period)
+    end = date.today()
+    start = end - timedelta(days=days)
+    try:
+        df = web.DataReader(ticker, "stooq", start=start, end=end)
+    except Exception as exc:
+        logger.warning("Stooq fetch failed for %s: %s", ticker, exc)
+        return []
+    if df is None or df.empty:
+        logger.warning("Stooq returned empty DataFrame for %s", ticker)
+        return []
+    # Stooq returns newest-first; sort ascending for consistency.
+    df = df.sort_index(ascending=True)
+    return _df_to_candles(df)
+
+
+def _fetch_ohlcv_sync(ticker: str, period: str, interval: str) -> list[dict]:
+    """
+    Blocking OHLCV fetch — runs inside asyncio.to_thread().
+
+    Strategy:
+      1. Try yfinance with a browser-impersonating session + primed cookie jar.
+      2. If yfinance returns empty (Yahoo blocks cloud ASNs), fall back to Stooq.
+         Stooq only provides daily bars, so intraday intervals silently degrade to
+         daily granularity on the fallback path.
+    """
+    import yfinance as yf
+
+    session = _make_yahoo_session()
+    df = None
+    try:
+        t = yf.Ticker(ticker, session=session)
+        df = t.history(period=period, interval=interval, auto_adjust=True)
+    except Exception as exc:
+        logger.warning("yfinance fetch failed for %s: %s", ticker, exc)
+
+    if df is not None and not df.empty:
+        return _df_to_candles(df)
+
+    # yfinance returned nothing — Yahoo is blocking this IP.
+    logger.warning(
+        "yfinance empty for %s (%s/%s) — falling back to Stooq (daily only)",
+        ticker, period, interval,
+    )
+    return _fetch_via_stooq(ticker, period)
 
 
 async def fetch_ohlcv(
