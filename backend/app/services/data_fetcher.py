@@ -117,7 +117,6 @@ def _fetch_via_yahoo_chart(ticker: str, period: str, interval: str) -> list[dict
         "User-Agent": _UA,
         "Accept": "application/json,text/plain,*/*",
         "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
         "Connection": "keep-alive",
     }
 
