@@ -38,6 +38,7 @@
 | 10 | 2026-05-28 | Pure JS (no TypeScript) for frontend | User constraint; avoids build complexity | TypeScript (better DX but extra tooling) | Medium — TS migration needs type declarations |
 | 11 | 2026-05-28 | Add `aiosqlite` and SQLite default local DB URL | Enables local execution out of the box without running Postgres | Force Postgres locally (requires manual setup) | Low |
 | 12 | 2026-05-28 | Set custom requests Session with User-Agent in yfinance | Yahoo Finance blocks default python scraper agents | Use paid API (costs money) | Low |
+| 13 | 2026-05-30 | Fallback to Yahoo Chart API + Cookie Session | yfinance blocked heavily on Railway/AWS ASNs, Stooq requires API keys now | Stooq (broken), Alpha Vantage (requires key) | Low |
 
 ## Task Log
 
@@ -45,6 +46,7 @@
 |---|------|------|--------|-------|----------------|-------|
 | 1 | Initial Centras Tokenizer backend build | Feature | Complete | backend/** | G1-G4 | Full-stack from scratch with SQLite fallback and yfinance fix |
 | 2 | Frontend: React 18 + Vite SPA | Feature | Complete | frontend/** | G1-G4 | 14 files; glassmorphism dark theme; Railway-ready |
+| 3 | Fix OHLCV fetch via Yahoo Chart API & Frontend chart rendering | Fix | Complete | backend/app/services/data_fetcher.py, frontend/src/components/CandleChart.jsx | G1-G4 | Bypassed Yahoo blocks, fixed `asyncpg` offset DataError, fixed `lightweight-charts` rendering |
 
 ## Known Issues & Technical Debt
 
