@@ -122,13 +122,30 @@ async def fetch_ohlcv(
 
 def _fetch_rss_sync(url: str, max_items: int) -> list[dict]:
     """
-    Blocking feedparser call — runs inside asyncio.to_thread().
+    Blocking RSS fetch — runs inside asyncio.to_thread().
+    Uses urllib with a browser User-Agent because Yahoo Finance blocks
+    default Python UA and most cloud provider IP ranges with plain feedparser.
     Returns list of news dicts; empty list on error.
     """
+    import urllib.request
+
+    _BROWSER_UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    )
+
     try:
-        feed = feedparser.parse(url)
+        req = urllib.request.Request(url, headers={"User-Agent": _BROWSER_UA})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            raw_bytes = resp.read()
+        feed = feedparser.parse(raw_bytes)
     except Exception as exc:
-        logger.warning("feedparser failed for %s: %s", url, exc)
+        logger.warning("RSS fetch failed for %s: %s", url, exc)
+        return []
+
+    if not feed.entries:
+        logger.warning("RSS feed returned 0 entries for %s (bozo=%s)", url, getattr(feed, "bozo", None))
         return []
 
     items: list[dict] = []
