@@ -290,7 +290,7 @@ def _fetch_rss_sync(url: str, max_items: int) -> list[dict]:
             try:
                 import calendar
                 ts = calendar.timegm(entry.published_parsed)
-                published_at = datetime.fromtimestamp(ts, tz=timezone.utc)
+                published_at = datetime.fromtimestamp(ts, tz=timezone.utc).replace(tzinfo=None)
             except Exception:
                 published_at = None
 
@@ -322,11 +322,14 @@ async def fetch_yahoo_news(ticker: str, max_items: int = 20) -> list[dict]:
         max_items: Maximum number of items to return.
 
     Returns:
-        List of news dicts: {title, url, published_at, source, summary}.
+        List of news dicts: {title, url, published_at, source, summary, ticker_symbol}.
         Returns empty list if feed is unavailable.
     """
     url = f"https://finance.yahoo.com/rss/headline?s={ticker.upper()}"
-    return await asyncio.to_thread(_fetch_rss_sync, url, max_items)
+    items = await asyncio.to_thread(_fetch_rss_sync, url, max_items)
+    for item in items:
+        item["ticker_symbol"] = ticker.upper()
+    return items
 
 
 async def fetch_general_market_news(max_items: int = 30) -> list[dict]:
