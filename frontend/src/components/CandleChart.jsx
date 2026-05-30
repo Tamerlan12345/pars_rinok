@@ -141,42 +141,69 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
       return
     }
 
-    // Normalize, sort numerically, and deduplicate by time
-    const sorted = [...candles].sort((a, b) => {
-      const ta = Number(a.time)
-      const tb = Number(b.time)
-      return ta - tb
-    })
+    // Normalize, sort numerically, and deduplicate
+    const sorted = [...candles].sort((a, b) => Number(a.time) - Number(b.time))
 
+    // For lightweight-charts, daily bars MUST have unique 'YYYY-MM-DD' strings.
+    // Intraday bars must be unique UNIX timestamps.
+    // We will just convert all to unique 'YYYY-MM-DD' string dates to be absolutely safe for daily/weekly.
+    // For 1h, etc., string format works too if we provide YYYY-MM-DD, but YYYY-MM-DD HH:MM is needed?
+    // Actually, lightweight-charts expects YYYY-MM-DD strings for daily, and UNIX timestamps for intraday.
+    // Let's use string 'YYYY-MM-DD' since our fallback is mostly 1d interval anyway.
     const uniqueSorted = []
-    let lastTime = null
+    const seenTimes = new Set()
+    
     for (const c of sorted) {
-      if (c.time !== lastTime) {
-        uniqueSorted.push(c)
-        lastTime = c.time
-      }
+      // Create a valid date object
+      const d = new Date(Number(c.time) * 1000)
+      if (Number.isNaN(d.getTime())) continue
+
+      // Format to YYYY-MM-DD
+      const timeStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+      
+      if (seenTimes.has(timeStr)) continue
+      seenTimes.add(timeStr)
+
+      // Ensure valid candle math
+      const o = Number(c.open)
+      let h = Number(c.high)
+      let l = Number(c.low)
+      const cl = Number(c.close)
+      const v = Number(c.volume) || 0
+
+      // Fix impossible wicks that cause lightweight-charts to crash
+      if (h < o) h = o
+      if (h < cl) h = cl
+      if (l > o) l = o
+      if (l > cl) l = cl
+
+      if (Number.isNaN(o) || Number.isNaN(h) || Number.isNaN(l) || Number.isNaN(cl)) continue
+
+      uniqueSorted.push({
+        time: timeStr,
+        open: o,
+        high: h,
+        low: l,
+        close: cl,
+        value: v,
+        color: cl >= o ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'
+      })
     }
 
     const ohlcv = uniqueSorted.map(c => ({
-      time: c.time,
-      open:  Number(c.open),
-      high:  Number(c.high),
-      low:   Number(c.low),
-      close: Number(c.close)
+      time: c.time, open: c.open, high: c.high, low: c.low, close: c.close
     }))
 
     const volumes = uniqueSorted.map(c => ({
-      time:  c.time,
-      value: Number(c.volume) || 0,
-      color: Number(c.close) >= Number(c.open)
-        ? 'rgba(16,185,129,0.4)'
-        : 'rgba(239,68,68,0.4)'
+      time: c.time, value: c.value, color: c.color
     }))
 
     try {
-      candleSeriesRef.current.setData(ohlcv)
-      volumeSeriesRef.current.setData(volumes)
-      chartRef.current?.timeScale().fitContent()
+      if (ohlcv.length > 0) {
+        candleSeriesRef.current.setData(ohlcv)
+        volumeSeriesRef.current.setData(volumes)
+        chartRef.current?.timeScale().fitContent()
+      }
     } catch (err) {
       // Lightweight-charts throws if data is not monotonically increasing —
       // this is a data quality issue from upstream, not a render bug.
