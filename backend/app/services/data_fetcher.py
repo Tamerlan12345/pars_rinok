@@ -98,27 +98,72 @@ def _df_to_candles(df: "pandas.DataFrame") -> list[dict]:
 
 def _fetch_via_stooq(ticker: str, period: str) -> list[dict]:
     """
-    Fallback source: Stooq via pandas_datareader.
-    Free, no API key, not blocked by cloud IPs.
-    Only supports daily granularity — intraday is not available.
+    Fallback source: Stooq public CSV endpoint, fetched via urllib.
+    Free, no API key, no pandas_datareader — not blocked by cloud IPs.
+    Only provides daily granularity.
+
+    URL: https://stooq.com/q/d/l/?s={ticker}.us&d1=YYYYMMDD&d2=YYYYMMDD&i=d
     """
-    from datetime import date, timedelta
-    import pandas_datareader.data as web
+    import csv
+    import io
+    import urllib.request
+    from datetime import date, timedelta, timezone as tz
 
     days = _period_to_days(period)
     end = date.today()
     start = end - timedelta(days=days)
+    d1 = start.strftime("%Y%m%d")
+    d2 = end.strftime("%Y%m%d")
+    # Stooq uses .us suffix for US-listed equities.
+    url = f"https://stooq.com/q/d/l/?s={ticker.lower()}.us&d1={d1}&d2={d2}&i=d"
+
+    _UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    )
     try:
-        df = web.DataReader(ticker, "stooq", start=start, end=end)
+        req = urllib.request.Request(url, headers={"User-Agent": _UA})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
     except Exception as exc:
-        logger.warning("Stooq fetch failed for %s: %s", ticker, exc)
+        logger.warning("Stooq HTTP fetch failed for %s: %s", ticker, exc)
         return []
-    if df is None or df.empty:
-        logger.warning("Stooq returned empty DataFrame for %s", ticker)
+
+    # Stooq returns non-CSV text on failure (e.g. "No data").
+    if not raw.strip().startswith("Date"):
+        logger.warning("Stooq returned unexpected response for %s: %.80s", ticker, raw)
         return []
-    # Stooq returns newest-first; sort ascending for consistency.
-    df = df.sort_index(ascending=True)
-    return _df_to_candles(df)
+
+    candles: list[dict] = []
+    reader = csv.DictReader(io.StringIO(raw))
+    for row in reader:
+        try:
+            dt = datetime.strptime(row["Date"], "%Y-%m-%d").replace(tzinfo=tz.utc)
+            open_ = float(row["Open"])
+            high = float(row["High"])
+            low = float(row["Low"])
+            close = float(row["Close"])
+            volume = float(row.get("Volume") or 0)
+        except (KeyError, ValueError):
+            continue
+        if close <= 0:
+            continue
+        candles.append({
+            "timestamp": dt,
+            "open": open_,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": volume,
+        })
+
+    # Stooq returns newest-first; sort ascending for charts.
+    candles.sort(key=lambda c: c["timestamp"])
+
+    if not candles:
+        logger.warning("Stooq CSV parsed 0 candles for %s", ticker)
+    return candles
 
 
 def _fetch_ohlcv_sync(ticker: str, period: str, interval: str) -> list[dict]:
