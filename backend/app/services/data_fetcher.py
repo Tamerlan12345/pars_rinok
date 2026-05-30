@@ -24,30 +24,52 @@ _VALID_INTERVALS = {
 }
 
 
+def _make_yahoo_session() -> "requests.Session":
+    """
+    Build a requests.Session with full browser headers and a primed Yahoo Finance
+    cookie jar. Without the crumb cookie that Yahoo sets on first page load,
+    the v8/v10 data API returns empty JSON on cloud provider IPs.
+    """
+    import requests
+
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept": (
+            "text/html,application/xhtml+xml,application/xml;q=0.9,"
+            "image/avif,image/webp,image/apng,*/*;q=0.8"
+        ),
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+    })
+    # Prime cookie jar — Yahoo issues a consent/crumb cookie on first GET.
+    try:
+        session.get("https://finance.yahoo.com", timeout=8)
+    except Exception as exc:
+        logger.debug("Yahoo cookie prime failed (non-fatal): %s", exc)
+    return session
+
+
 def _fetch_ohlcv_sync(ticker: str, period: str, interval: str) -> list[dict]:
     """
     Blocking yfinance download — runs inside asyncio.to_thread().
+    Uses Ticker.history() (more reliable with a custom session than yf.download).
     Returns a list of candle dicts; empty list on any error.
     """
     import yfinance as yf  # imported inside thread to avoid import-time side effects
 
+    session = _make_yahoo_session()
     try:
-        import requests
-        session = requests.Session()
-        session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        })
-        df = yf.download(
-            tickers=ticker,
-            period=period,
-            interval=interval,
-            auto_adjust=True,
-            progress=False,
-            threads=False,
-            session=session,
-        )
+        t = yf.Ticker(ticker, session=session)
+        df = t.history(period=period, interval=interval, auto_adjust=True)
     except Exception as exc:
-        logger.warning("yfinance download failed for %s (%s/%s): %s", ticker, period, interval, exc)
+        logger.warning("yfinance fetch failed for %s (%s/%s): %s", ticker, period, interval, exc)
         return []
 
     if df is None or df.empty:
@@ -56,22 +78,14 @@ def _fetch_ohlcv_sync(ticker: str, period: str, interval: str) -> list[dict]:
 
     candles: list[dict] = []
     for ts, row in df.iterrows():
-        # yfinance may return MultiIndex columns when downloading a single ticker.
-        def _get(col: str) -> float:
-            try:
-                val = row[col]
-                # MultiIndex case: row[(col, ticker)]
-                if hasattr(val, "__len__") and not isinstance(val, (int, float)):
-                    val = row[(col, ticker)]
-                return float(val)
-            except (KeyError, TypeError, ValueError):
-                return 0.0
-
-        open_ = _get("Open")
-        high = _get("High")
-        low = _get("Low")
-        close = _get("Close")
-        volume = _get("Volume")
+        try:
+            open_ = float(row["Open"])
+            high = float(row["High"])
+            low = float(row["Low"])
+            close = float(row["Close"])
+            volume = float(row.get("Volume", 0) or 0)
+        except (KeyError, TypeError, ValueError):
+            continue
 
         if close <= 0:
             # Skip corrupt/delisted rows.
