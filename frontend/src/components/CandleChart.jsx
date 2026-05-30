@@ -126,11 +126,16 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
     return chart
   }, [destroyChart])
 
-  // Init chart once on mount
+  // Init chart once on mount or when loading finishes
   useEffect(() => {
-    initChart()
+    if (!loading && !chartRef.current) {
+      initChart()
+    }
+  }, [loading, initChart])
+
+  useEffect(() => {
     return destroyChart
-  }, [initChart, destroyChart])
+  }, [destroyChart])
 
   // Feed data to chart when candles change
   useEffect(() => {

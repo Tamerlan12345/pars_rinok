@@ -78,7 +78,7 @@ export default function NewsPanel() {
   const [fetching, setFetching] = useState(false)
   const timerRef = useRef(null)
 
-  const loadNews = useCallback(async (tickerFilter, lim) => {
+  const loadNewsFromDB = useCallback(async (tickerFilter, lim) => {
     setLoading(true)
     setError('')
     try {
@@ -97,12 +97,28 @@ export default function NewsPanel() {
     }
   }, [limit])
 
-  // Initial load + auto-refresh
+  const handleManualRefresh = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      if (filterTicker && filterTicker !== 'ALL') {
+        await newsApi.fetchNews(filterTicker)
+      } else {
+        await newsApi.fetchGeneralNews()
+      }
+    } catch (err) {
+      // Ignore fetch errors, we still want to show DB data
+      console.warn('Failed to fetch from upstream:', err)
+    }
+    await loadNewsFromDB(filterTicker, limit)
+  }, [filterTicker, limit, loadNewsFromDB])
+
+  // Initial load + auto-refresh (DB only, don't spam Yahoo every 5 mins)
   useEffect(() => {
-    loadNews(filterTicker)
-    timerRef.current = setInterval(() => loadNews(filterTicker), AUTO_REFRESH_MS)
+    loadNewsFromDB(filterTicker)
+    timerRef.current = setInterval(() => loadNewsFromDB(filterTicker), AUTO_REFRESH_MS)
     return () => clearInterval(timerRef.current)
-  }, [filterTicker, loadNews])
+  }, [filterTicker, loadNewsFromDB])
 
   const handleFetchNews = useCallback(async () => {
     if (!fetchTicker.trim()) return
@@ -110,18 +126,18 @@ export default function NewsPanel() {
     setError('')
     try {
       await newsApi.fetchNews(fetchTicker.trim().toUpperCase())
-      await loadNews(filterTicker)
+      await loadNewsFromDB(filterTicker)
     } catch (err) {
       setError(err.response?.data?.detail || err.message || 'Failed to fetch news')
     } finally {
       setFetching(false)
     }
-  }, [fetchTicker, filterTicker, loadNews])
+  }, [fetchTicker, filterTicker, loadNewsFromDB])
 
   const handleFilterChange = useCallback((t) => {
     setFilterTicker(t)
-    loadNews(t)
-  }, [loadNews])
+    loadNewsFromDB(t)
+  }, [loadNewsFromDB])
 
   // Extract unique tickers from loaded news for dynamic pills
   const availableTickers = ['ALL', ...Array.from(
@@ -154,14 +170,14 @@ export default function NewsPanel() {
               value={limit}
               onChange={e => {
                 setLimit(Number(e.target.value))
-                loadNews(filterTicker, Number(e.target.value))
+                loadNewsFromDB(filterTicker, Number(e.target.value))
               }}
             >
               {[20, 50, 100].map(n => <option key={n} value={n}>{n} items</option>)}
             </select>
             <button
               className="btn btn-secondary btn-sm"
-              onClick={() => loadNews(filterTicker)}
+              onClick={handleManualRefresh}
               disabled={loading}
             >
               {loading ? <span className="spinner spinner-sm" /> : '↺ Refresh'}

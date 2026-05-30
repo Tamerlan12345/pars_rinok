@@ -142,6 +142,11 @@ export const newsApi = {
       .then(r => withData(r, Array.isArray(r.data) ? r.data.map(normalizeNews) : []))
   },
 
+  fetchGeneralNews() {
+    return client.get('/api/news/general')
+      .then(r => withData(r, Array.isArray(r.data) ? r.data.map(normalizeNews) : []))
+  },
+
   getLatest(limit = 20) {
     return client.get('/api/news/latest', { params: { limit } })
       .then(r => withData(r, Array.isArray(r.data) ? r.data.map(normalizeNews) : []))
