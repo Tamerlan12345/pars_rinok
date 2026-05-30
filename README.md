@@ -70,7 +70,7 @@ Open http://localhost:5173
 | `JWT_SECRET_KEY` | Long random secret (32+ chars) |
 | `ADMIN_USERNAME` | Login username |
 | `ADMIN_PASSWORD` | Login password |
-| `CORS_ORIGINS` | Frontend URL (Railway URL) |
+| `CORS_ORIGINS_RAW` | Frontend URL (Railway URL) |
 
 ### Frontend (`.env`)
 | Variable | Description |

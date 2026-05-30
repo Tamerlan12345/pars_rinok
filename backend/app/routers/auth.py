@@ -1,4 +1,4 @@
-"""Auth router — JWT login for single admin user."""
+"""Auth router - JWT login for single admin user."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
-from app.config import get_settings
+import app.config as config_module
 from app.schemas.auth import LoginRequest, TokenResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -15,7 +15,7 @@ _bearer = HTTPBearer()
 
 
 def _create_token(username: str) -> tuple[str, int]:
-    settings = get_settings()
+    settings = config_module.get_settings()
     expire_seconds = settings.jwt_expire_minutes * 60
     payload = {
         "sub": username,
@@ -26,12 +26,8 @@ def _create_token(username: str) -> tuple[str, int]:
     return token, expire_seconds
 
 
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
-) -> str:
-    """FastAPI dependency — validates Bearer JWT, returns username."""
-    settings = get_settings()
-    token = credentials.credentials
+def verify_access_token(token: str) -> str:
+    settings = config_module.get_settings()
     try:
         payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
         username: str | None = payload.get("sub")
@@ -46,11 +42,18 @@ async def get_current_user(
         )
 
 
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+) -> str:
+    """Validate Bearer JWT and return username."""
+    return verify_access_token(credentials.credentials)
+
+
 @router.post("/login", response_model=TokenResponse)
 async def login(body: LoginRequest) -> TokenResponse:
-    settings = get_settings()
+    settings = config_module.get_settings()
 
-    # Constant-time comparison to prevent timing attacks
+    # Constant-time comparison to prevent timing attacks.
     import hmac
     valid_user = hmac.compare_digest(body.username, settings.admin_username)
     valid_pass = hmac.compare_digest(body.password, settings.admin_password)

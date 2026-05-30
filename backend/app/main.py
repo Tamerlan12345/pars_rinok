@@ -1,7 +1,7 @@
 """FastAPI application entrypoint for Centras Tokenizer."""
 from __future__ import annotations
 
-import os
+from urllib.parse import urlsplit, urlunsplit
 
 import structlog
 from fastapi import FastAPI, Request
@@ -17,6 +17,15 @@ from app.routers import analysis, auth, health, logs, market, news
 logger = structlog.get_logger("centras.main")
 
 settings = get_settings()
+
+
+def _safe_database_url_for_log(url: str) -> str:
+    parsed = urlsplit(url)
+    if not parsed.scheme or not parsed.netloc:
+        return parsed.scheme or "local"
+    hostname = parsed.hostname or ""
+    port = f":{parsed.port}" if parsed.port else ""
+    return urlunsplit((parsed.scheme, f"***@{hostname}{port}", parsed.path, "", ""))
 
 app = FastAPI(
     title="Centras Tokenizer API",
@@ -76,7 +85,7 @@ async def startup() -> None:
         "centras_startup",
         environment=settings.environment,
         gemini_configured=bool(settings.gemini_api_key),
-        database_url=settings.database_url[:40] + "...",  # truncated for safety
+        database_url=_safe_database_url_for_log(settings.database_url),
     )
 
 

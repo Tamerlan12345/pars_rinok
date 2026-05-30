@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal, get_db
-from app.routers.auth import get_current_user
+from app.routers.auth import get_current_user, verify_access_token
 from app.services.logger_service import get_recent_logs
 
 router = APIRouter(prefix="/logs", tags=["logs"])
@@ -40,12 +40,15 @@ async def recent_logs(
 
 
 @router.get("/stream")
-async def stream_logs() -> StreamingResponse:
+async def stream_logs(token: str = Query(...)) -> StreamingResponse:
     """
     Server-Sent Events stream of new audit log entries.
     Polls DB every 3 seconds, emits new entries since last seen ID.
-    No auth on SSE — client stores token separately; endpoint is read-only logs.
+    EventSource cannot send Authorization headers, so the browser passes a JWT
+    query token that is validated before the stream opens.
     """
+    verify_access_token(token)
+
     async def event_generator():
         last_id = 0
         # Bootstrap: get current max id

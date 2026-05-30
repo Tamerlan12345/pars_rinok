@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime, timedelta
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -430,7 +431,7 @@ class TestSchemas:
 class TestAuthTokenLogic:
     def test_create_token_returns_string_and_seconds(self):
         """_create_token should return a JWT string and a positive int."""
-        with patch("app.routers.auth.get_settings") as mock_settings:
+        with patch("app.routers.auth.config_module.get_settings") as mock_settings:
             mock_settings.return_value.jwt_expire_minutes = 60
             mock_settings.return_value.jwt_secret_key = "test-secret-32-chars-xxxxxxxxxx"
             mock_settings.return_value.jwt_algorithm = "HS256"
@@ -448,7 +449,7 @@ class TestAuthTokenLogic:
         from jose import jwt as jose_jwt
 
         secret = "test-secret-32-chars-xxxxxxxxxx"
-        with patch("app.routers.auth.get_settings") as mock_settings:
+        with patch("app.routers.auth.config_module.get_settings") as mock_settings:
             mock_settings.return_value.jwt_expire_minutes = 60
             mock_settings.return_value.jwt_secret_key = secret
             mock_settings.return_value.jwt_algorithm = "HS256"

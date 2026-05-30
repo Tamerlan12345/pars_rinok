@@ -28,10 +28,10 @@ async def run_analysis(
     result = await db.execute(
         select(Candle)
         .where(Candle.ticker_symbol == body.ticker, Candle.interval == body.interval)
-        .order_by(Candle.timestamp)
-        .limit(500)
+        .order_by(desc(Candle.timestamp))
+        .limit(512)
     )
-    candles = result.scalars().all()
+    candles = list(reversed(result.scalars().all()))
 
     if len(candles) < 2:
         raise HTTPException(

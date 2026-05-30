@@ -24,6 +24,7 @@ sys.modules.setdefault("plotly", mock.MagicMock())
 sys.modules.setdefault("plotly.graph_objects", mock.MagicMock())
 sys.modules.setdefault("plotly.utils", mock.MagicMock())
 
+os.environ["FLASK_ENV"] = "testing"
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("ADMIN_PASSWORD", "testpass123")
 os.environ.setdefault("GEMINI_API_KEY", "")
@@ -69,6 +70,27 @@ def flask_app():
 def client(flask_app):
     """Flask test client."""
     return flask_app.test_client()
+
+
+@pytest.fixture(autouse=True)
+def reset_webui_state():
+    """Keep module-level WebUI state isolated between tests."""
+    import app as webui_app
+
+    clean_state = {
+        "model": None,
+        "predictor": None,
+        "model_id": None,
+        "tokenizer_id": None,
+        "model_path": None,
+        "data": None,
+        "data_path": None,
+        "prediction_results": [],
+        "actual_data": [],
+    }
+    webui_app._state.update(clean_state)
+    yield
+    webui_app._state.update(clean_state)
 
 
 @pytest.fixture

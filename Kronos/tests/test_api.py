@@ -150,17 +150,17 @@ class TestJWTProtection:
 
 class TestAvailableModels:
     def test_available_models_public(self, client):
-        """GET /api/available-models must be callable (public or with auth)."""
+        """GET /api/available-models is public and describes Kronos-base."""
         resp = client.get("/api/available-models")
-        # Either 200 or 401 — just must not 500
-        assert resp.status_code in (200, 401)
+        assert resp.status_code == 200
 
     def test_available_models_content(self, client, auth_headers):
         resp = client.get("/api/available-models", headers=auth_headers)
-        # If endpoint exists, check shape
-        if resp.status_code == 200:
-            data = resp.get_json()
-            assert "models" in data or isinstance(data, dict)
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["models"][0]["id"] == "NeoQuasar/Kronos-base"
+        assert data["models"][0]["tokenizer_id"] == "NeoQuasar/Kronos-Tokenizer-base"
+        assert data["models"][0]["max_context"] == 512
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -182,9 +182,11 @@ class TestLoadData:
             json={"file_path": "/nonexistent/path/data.csv"},
             headers=auth_headers,
         )
-        assert resp.status_code in (400, 500)
+        assert resp.status_code == 404
 
     def test_valid_csv(self, client, auth_headers, sample_csv_path):
+        import app as webui_app
+
         resp = client.post(
             "/api/load-data",
             json={"file_path": sample_csv_path},
@@ -192,8 +194,9 @@ class TestLoadData:
         )
         assert resp.status_code == 200
         body = resp.get_json()
-        assert body.get("success") is True
-        assert body["data_info"]["rows"] > 0
+        assert body["rows"] > 0
+        assert "summary" in body
+        assert isinstance(webui_app._state["data"].index, pd.DatetimeIndex)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -205,18 +208,21 @@ class TestPredict:
         """Without loading a model first, /api/predict should return 400."""
         resp = client.post(
             "/api/predict",
-            json={"file_path": "/some/file.csv", "lookback": 50, "pred_len": 10},
+            json={"context_length": 50, "horizon": 10},
             headers=auth_headers,
         )
-        assert resp.status_code in (400, 500)
+        body = resp.get_json()
+        assert resp.status_code == 400
+        assert "No model loaded" in body["error"]
 
-    def test_predict_missing_file_path(self, client, auth_headers):
-        resp = client.post(
-            "/api/predict",
-            json={},
-            headers=auth_headers,
-        )
-        assert resp.status_code in (400, 500)
+    def test_predict_no_data_loaded(self, client, auth_headers):
+        import app as webui_app
+
+        webui_app._state["predictor"] = mock.MagicMock()
+        resp = client.post("/api/predict", json={}, headers=auth_headers)
+        body = resp.get_json()
+        assert resp.status_code == 400
+        assert "No data loaded" in body["error"]
 
     def test_predict_mocked_model(self, client, auth_headers, sample_csv_path, flask_app):
         """Inject a stub predictor and verify the full predict pipeline returns 200."""
@@ -236,20 +242,37 @@ class TestPredict:
         stub_predictor = mock.MagicMock()
         stub_predictor.predict.return_value = fake_pred
 
-        # Inject stub into module state
-        webui_app._state["predictor"] = stub_predictor
+        load_resp = client.post(
+            "/api/load-data",
+            json={"file_path": sample_csv_path},
+            headers=auth_headers,
+        )
+        assert load_resp.status_code == 200
 
-        # Also need to silence Plotly chart creation
-        with mock.patch("app.create_prediction_chart", return_value="{}"):
+        webui_app._state["predictor"] = stub_predictor
+        with (
+            mock.patch("app._build_chart", return_value={}),
+            mock.patch("app._save_prediction_results", return_value={}),
+        ):
             resp = client.post(
                 "/api/predict",
-                json={"file_path": sample_csv_path, "lookback": 50, "pred_len": pred_n},
+                json={"context_length": 50, "horizon": pred_n, "sample_count": 3},
                 headers=auth_headers,
             )
 
-        # Cleanup
-        webui_app._state["predictor"] = None
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["horizon"] == pred_n
+        assert body["context_length"] == 50
+        assert body["sample_count"] == 3
+        assert len(body["predictions"]) == pred_n
+        assert len(body["actual_data"]) == 50
 
-        # The endpoint may succeed or fail depending on internal logic;
-        # the key invariant is no unhandled 500 from missing fields
-        assert resp.status_code != 500 or "error" in (resp.get_json() or {})
+        stub_predictor.predict.assert_called_once()
+        call_kwargs = stub_predictor.predict.call_args.kwargs
+        assert len(call_kwargs["df"]) == 50
+        assert isinstance(call_kwargs["df"].index, pd.DatetimeIndex)
+        assert len(call_kwargs["x_timestamp"]) == 50
+        assert len(call_kwargs["y_timestamp"]) == pred_n
+        assert call_kwargs["pred_len"] == pred_n
+        assert call_kwargs["sample_count"] == 3

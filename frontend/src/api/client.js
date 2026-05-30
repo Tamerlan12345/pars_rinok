@@ -10,7 +10,56 @@ const client = axios.create({
   }
 })
 
-// Request interceptor: inject auth token
+function toChartTime(value) {
+  if (typeof value === 'number') return value
+  if (!value) return value
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? value : Math.floor(parsed.getTime() / 1000)
+}
+
+function normalizeCandle(candle) {
+  if (!candle || typeof candle !== 'object') return candle
+  return {
+    ...candle,
+    time: candle.time ?? toChartTime(candle.timestamp)
+  }
+}
+
+function normalizeAnalysis(item) {
+  if (!item || typeof item !== 'object') return item
+  return {
+    ...item,
+    ticker: item.ticker ?? item.ticker_symbol,
+    coarse_tokens: item.coarse_tokens ?? item.tokens_coarse ?? [],
+    fine_tokens: item.fine_tokens ?? item.tokens_fine ?? [],
+    summary: item.summary ?? item.gemini_summary,
+    signals: item.signals ?? item.gemini_signals ?? [],
+    sentiment: item.sentiment ?? item.gemini_sentiment,
+    confidence: item.confidence ?? item.gemini_confidence
+  }
+}
+
+function normalizeNews(item) {
+  if (!item || typeof item !== 'object') return item
+  return {
+    ...item,
+    ticker: item.ticker ?? item.ticker_symbol
+  }
+}
+
+function withData(response, data) {
+  return { ...response, data }
+}
+
+function formatDetail(detail) {
+  if (Array.isArray(detail)) {
+    return detail
+      .map(item => item?.msg || item?.message || String(item))
+      .join('; ')
+  }
+  return detail
+}
+
 client.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('auth_token')
@@ -22,13 +71,14 @@ client.interceptors.request.use(
   (error) => Promise.reject(error)
 )
 
-// Response interceptor: handle 401 globally
 client.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.response?.data?.detail) {
+      error.response.data.detail = formatDetail(error.response.data.detail)
+    }
     if (error.response?.status === 401) {
       localStorage.removeItem('auth_token')
-      // Only redirect if not already on a non-app page (avoid redirect loops in tests)
       if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
         window.dispatchEvent(new CustomEvent('auth:expired'))
       }
@@ -37,27 +87,20 @@ client.interceptors.response.use(
   }
 )
 
-// ── Auth ───────────────────────────────────────────────────────────────────
-
 export const authApi = {
   login(username, password) {
-    // OAuth2 password flow: FastAPI expects form data
-    const params = new URLSearchParams()
-    params.append('username', username)
-    params.append('password', password)
-    return client.post('/api/auth/login', params, {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-    })
+    return client.post('/api/auth/login', { username, password })
   }
 }
-
-// ── Market ─────────────────────────────────────────────────────────────────
 
 export const marketApi = {
   fetchData(ticker, period, interval) {
     return client.get('/api/market/fetch', {
       params: { ticker, period, interval }
-    })
+    }).then(r => withData(r, {
+      ...r.data,
+      candles: Array.isArray(r.data?.candles) ? r.data.candles.map(normalizeCandle) : []
+    }))
   },
 
   getTickers() {
@@ -71,53 +114,50 @@ export const marketApi = {
   getCandles(ticker, interval, limit = 300) {
     return client.get('/api/market/candles', {
       params: { ticker, interval, limit }
-    })
+    }).then(r => withData(r, Array.isArray(r.data) ? r.data.map(normalizeCandle) : []))
   }
 }
-
-// ── Analysis ───────────────────────────────────────────────────────────────
 
 export const analysisApi = {
   runAnalysis(ticker, period, interval) {
     return client.post('/api/analysis/run', { ticker, period, interval })
+      .then(r => withData(r, normalizeAnalysis(r.data)))
   },
 
   getHistory(ticker, limit = 10) {
     return client.get('/api/analysis/history', {
       params: { ticker, limit }
-    })
+    }).then(r => withData(r, Array.isArray(r.data) ? r.data.map(normalizeAnalysis) : []))
   },
 
   getById(id) {
     return client.get(`/api/analysis/${id}`)
+      .then(r => withData(r, normalizeAnalysis(r.data)))
   }
 }
-
-// ── News ───────────────────────────────────────────────────────────────────
 
 export const newsApi = {
   fetchNews(ticker) {
     return client.get('/api/news/fetch', { params: { ticker } })
+      .then(r => withData(r, Array.isArray(r.data) ? r.data.map(normalizeNews) : []))
   },
 
   getLatest(limit = 20) {
     return client.get('/api/news/latest', { params: { limit } })
+      .then(r => withData(r, Array.isArray(r.data) ? r.data.map(normalizeNews) : []))
   },
 
   getByTicker(symbol, limit = 20) {
     return client.get(`/api/news/ticker/${symbol}`, { params: { limit } })
+      .then(r => withData(r, Array.isArray(r.data) ? r.data.map(normalizeNews) : []))
   }
 }
-
-// ── Logs ───────────────────────────────────────────────────────────────────
 
 export const logsApi = {
   getRecent(limit = 100) {
     return client.get('/api/logs/recent', { params: { limit } })
   }
 }
-
-// ── Health ─────────────────────────────────────────────────────────────────
 
 export const healthApi = {
   check() {

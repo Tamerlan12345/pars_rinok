@@ -22,11 +22,19 @@ for mod in ("torch", "safetensors", "huggingface_hub", "tqdm",
             "plotly", "plotly.graph_objects", "plotly.utils"):
     sys.modules.setdefault(mod, mock.MagicMock())
 
+os.environ["FLASK_ENV"] = "testing"
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("ADMIN_PASSWORD", "testpass123")
 os.environ.setdefault("GEMINI_API_KEY", "")
 
 import app as webui_app
+
+
+def _load_data_frame(path: Path | str) -> tuple[pd.DataFrame | None, str | None]:
+    try:
+        return webui_app._read_ohlcv_file(Path(path)), None
+    except Exception as exc:  # noqa: BLE001
+        return None, str(exc)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -45,33 +53,34 @@ def _make_df(freq: str, n: int = 20) -> pd.DataFrame:
 
 
 class TestLoadDataFile:
-    """Tests for webui_app.load_data_file()"""
+    """Tests for webui_app._read_ohlcv_file()."""
 
     def test_valid_csv_returns_df(self, tmp_path):
         df = _make_df("5min")
         p = tmp_path / "data.csv"
         df.to_csv(p, index=False)
-        result, err = webui_app.load_data_file(str(p))
+        result, err = _load_data_frame(p)
         assert err is None
         assert isinstance(result, pd.DataFrame)
         assert len(result) == 20
+        assert isinstance(result.index, pd.DatetimeIndex)
 
     def test_missing_ohlc_columns(self, tmp_path):
         df = pd.DataFrame({"timestamps": pd.date_range("2024-01-01", periods=5, freq="1h"),
                            "volume": [1, 2, 3, 4, 5]})
         p = tmp_path / "bad.csv"
         df.to_csv(p, index=False)
-        result, err = webui_app.load_data_file(str(p))
+        result, err = _load_data_frame(p)
         assert result is None
         assert err is not None
 
     def test_nonexistent_file(self):
-        result, err = webui_app.load_data_file("/nonexistent/path/data.csv")
+        result, err = _load_data_frame("/nonexistent/path/data.csv")
         assert result is None
         assert err is not None
 
-    def test_no_timestamp_col_creates_one(self, tmp_path):
-        """If no timestamp column, a synthetic one should be created."""
+    def test_no_timestamp_col_keeps_numeric_index(self, tmp_path):
+        """If no timestamp column exists, OHLC data still loads."""
         df = pd.DataFrame({
             "open":  [100.0, 101.0],
             "high":  [102.0, 103.0],
@@ -80,11 +89,12 @@ class TestLoadDataFile:
         })
         p = tmp_path / "notimestamp.csv"
         df.to_csv(p, index=False)
-        result, err = webui_app.load_data_file(str(p))
+        result, err = _load_data_frame(p)
         assert err is None
-        assert "timestamps" in result.columns
+        assert len(result) == 2
+        assert not isinstance(result.index, pd.DatetimeIndex)
 
-    def test_date_col_renamed_to_timestamps(self, tmp_path):
+    def test_date_col_sets_datetime_index(self, tmp_path):
         df = pd.DataFrame({
             "date":  ["2024-01-01", "2024-01-02"],
             "open":  [100.0, 101.0],
@@ -94,9 +104,10 @@ class TestLoadDataFile:
         })
         p = tmp_path / "withdate.csv"
         df.to_csv(p, index=False)
-        result, err = webui_app.load_data_file(str(p))
+        result, err = _load_data_frame(p)
         assert err is None
-        assert "timestamps" in result.columns
+        assert isinstance(result.index, pd.DatetimeIndex)
+        assert result.index.name == "datetime"
 
     def test_string_prices_coerced_to_float(self, tmp_path):
         df = pd.DataFrame({
@@ -108,7 +119,7 @@ class TestLoadDataFile:
         })
         p = tmp_path / "strings.csv"
         df.to_csv(p, index=False)
-        result, err = webui_app.load_data_file(str(p))
+        result, err = _load_data_frame(p)
         assert err is None
         assert result["open"].dtype == float
 
@@ -117,7 +128,7 @@ class TestLoadDataFile:
         df.loc[3, "close"] = float("nan")
         p = tmp_path / "withnan.csv"
         df.to_csv(p, index=False)
-        result, err = webui_app.load_data_file(str(p))
+        result, err = _load_data_frame(p)
         assert err is None
         assert len(result) == 9  # one row dropped
 
@@ -132,7 +143,7 @@ class TestLoadDataFile:
         })
         p = tmp_path / "novol.csv"
         df.to_csv(p, index=False)
-        result, err = webui_app.load_data_file(str(p))
+        result, err = _load_data_frame(p)
         assert err is None
 
 
@@ -216,6 +227,7 @@ class TestGeminiAnalyst:
 class TestAppState:
     def test_initial_state_all_none(self):
         assert webui_app._state["model"] is None
+        assert webui_app._state["predictor"] is None
         assert webui_app._state["data"] is None
 
     def test_prediction_results_initially_empty(self):

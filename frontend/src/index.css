@@ -965,6 +965,12 @@ h1, h2, h3, h4, h5, h6 {
   gap: 16px;
 }
 
+.analysis-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 16px;
+}
+
 /* ── Animations ─────────────────────────────────────────────── */
 @keyframes fadeIn {
   from { opacity: 0; }
@@ -1031,7 +1037,8 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 @media (max-width: 900px) {
-  .dashboard-grid {
+  .dashboard-grid,
+  .analysis-grid {
     grid-template-columns: 1fr;
   }
 

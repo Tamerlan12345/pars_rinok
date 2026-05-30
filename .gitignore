@@ -59,6 +59,7 @@ Thumbs.db
 # Logs
 *.log
 logs/
+Kronos/webui/results/
 
 # Railway
 .railway/

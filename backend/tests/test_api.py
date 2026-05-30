@@ -467,6 +467,55 @@ class TestAnalysisRun:
         # gemini_api_key is "" in test settings → mock path in analyze_with_gemini
         assert body["mock_mode"] is True
 
+    @pytest.mark.asyncio
+    async def test_run_analysis_uses_latest_512_candles(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        mock_gemini_result: dict,
+    ):
+        from app.services.tokenizer import TokenizedSequence
+
+        fake_candles = _make_candle_rows(520)
+        captured: dict[str, list[dict]] = {}
+
+        def fake_tokenize(candles: list[dict]) -> TokenizedSequence:
+            captured["candles"] = candles
+            return TokenizedSequence(
+                coarse_tokens=list(range(511)),
+                fine_tokens=[2] * 511,
+                n_candles=512,
+                normalization_stats={"mean": 0.0, "std": 0.001, "lo": -0.003, "hi": 0.003},
+            )
+
+        with patch(
+            "app.services.data_fetcher.fetch_ohlcv",
+            new_callable=AsyncMock,
+            return_value=fake_candles,
+        ):
+            await client.get("/api/market/fetch?ticker=MSFT&period=1y&interval=1d")
+
+        with (
+            patch("app.routers.analysis.tokenize_ohlcv", side_effect=fake_tokenize),
+            patch("app.routers.analysis.tokens_to_prompt_repr", return_value="tokens"),
+            patch(
+                "app.routers.analysis.analyze_with_gemini",
+                new_callable=AsyncMock,
+                return_value=mock_gemini_result,
+            ),
+            patch("app.routers.analysis.log_event", new_callable=AsyncMock),
+        ):
+            response = await client.post(
+                "/api/analysis/run",
+                json={"ticker": "MSFT", "period": "1y", "interval": "1d"},
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 200
+        assert len(captured["candles"]) == 512
+        assert captured["candles"][0]["timestamp"] == fake_candles[8]["timestamp"]
+        assert captured["candles"][-1]["timestamp"] == fake_candles[-1]["timestamp"]
+
 
 # ===========================================================================
 # Analysis — history and detail
@@ -564,13 +613,15 @@ class TestLogs:
         assert response.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_logs_stream_endpoint_exists(self, client: AsyncClient):
-        """SSE endpoint should be reachable (no auth required per router comment)."""
-        # We just hit it and expect either 200 (SSE started) or 204; not 404.
-        # Since the stream is infinite we don't await the full response.
-        # httpx will close the connection; that's fine for a smoke test.
+    async def test_logs_stream_requires_token(self, client: AsyncClient):
+        response = await client.get("/api/logs/stream")
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_logs_stream_endpoint_exists(self, client: AsyncClient, valid_jwt_token: str):
+        """SSE endpoint should be reachable with a valid query token."""
         try:
-            async with client.stream("GET", "/api/logs/stream") as response:
+            async with client.stream("GET", f"/api/logs/stream?token={valid_jwt_token}") as response:
                 assert response.status_code == 200
         except Exception:
             pass  # Connection closed/reset on SSE is expected in test context

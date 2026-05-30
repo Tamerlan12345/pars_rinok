@@ -17,7 +17,7 @@ from app.schemas.market import (
     TickerCreate,
     TickerRead,
 )
-from app.services.data_fetcher import fetch_ohlcv
+from app.services import data_fetcher
 
 router = APIRouter(prefix="/market", tags=["market"])
 
@@ -48,7 +48,7 @@ async def fetch_market_data(
         from_cache = True
     else:
         # Fetch from yfinance and upsert
-        raw_candles = await fetch_ohlcv(ticker, period, interval)
+        raw_candles = await data_fetcher.fetch_ohlcv(ticker, period, interval)
 
         if raw_candles:
             # Ensure ticker exists in DB

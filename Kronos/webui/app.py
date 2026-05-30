@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -47,15 +48,54 @@ logging.basicConfig(
 )
 logger = logging.getLogger("kronos.webui")
 
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be an integer") from exc
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_placeholder(value: str) -> bool:
+    normalized = value.strip().lower()
+    return normalized in {"change-me-in-production", "admin123"} or normalized.startswith("replace_")
+
+
 _SECRET_KEY: str = os.getenv("SECRET_KEY", "change-me-in-production")
 _ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "admin123")
 _GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+_FLASK_ENV: str = os.getenv("FLASK_ENV", "development").lower()
+_IS_PRODUCTION: bool = _FLASK_ENV == "production"
+_CORS_ORIGINS_RAW: str = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173")
+_KRONOS_REPO_PATH: str = os.getenv("KRONOS_REPO_PATH") or str(Path(__file__).resolve().parents[1])
+_KRONOS_MODEL_ID: str = os.getenv("KRONOS_MODEL_ID", "NeoQuasar/Kronos-base")
+_KRONOS_TOKENIZER_ID: str = os.getenv("KRONOS_TOKENIZER_ID", "NeoQuasar/Kronos-Tokenizer-base")
+_KRONOS_MAX_CONTEXT: int = _env_int("KRONOS_MAX_CONTEXT", 512)
+_ALLOW_KRONOS_STUB: bool = _env_bool("ALLOW_KRONOS_STUB")
 
 if _SECRET_KEY == "change-me-in-production":
     logger.warning(
         "SECRET_KEY is set to the default placeholder — "
         "set a strong random value via the SECRET_KEY env variable before deploying."
     )
+
+if _IS_PRODUCTION:
+    if _is_placeholder(_SECRET_KEY) or len(_SECRET_KEY) < 32:
+        raise RuntimeError("SECRET_KEY must be a strong 32+ character value in production")
+    if _is_placeholder(_ADMIN_PASSWORD) or len(_ADMIN_PASSWORD) < 12:
+        raise RuntimeError("ADMIN_PASSWORD must be changed to a strong 12+ character value in production")
+    if _CORS_ORIGINS_RAW.strip() == "*":
+        raise RuntimeError("CORS_ORIGINS cannot be '*' in production")
 
 # ---------------------------------------------------------------------------
 # In-memory user store  (username → {"password_hash": ..., "role": ...})
@@ -87,7 +127,12 @@ def create_app() -> Flask:
     app.config["JSON_SORT_KEYS"] = False
 
     # --- Extensions --------------------------------------------------------
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    cors_origins: str | list[str]
+    if _CORS_ORIGINS_RAW.strip() == "*":
+        cors_origins = "*"
+    else:
+        cors_origins = [o.strip() for o in _CORS_ORIGINS_RAW.split(",") if o.strip()]
+    CORS(app, resources={r"/api/*": {"origins": cors_origins}})
 
     jwt = JWTManager(app)
 
@@ -138,12 +183,47 @@ def create_app() -> Flask:
 # ---------------------------------------------------------------------------
 _state: dict[str, Any] = {
     "model": None,           # loaded Kronos model object
-    "model_path": None,      # str path of the loaded checkpoint
+    "predictor": None,       # loaded KronosPredictor-compatible object
+    "model_id": None,        # Hugging Face model id or local model path
+    "tokenizer_id": None,    # Hugging Face tokenizer id or local tokenizer path
+    "model_path": None,      # backward-compatible alias for older UI/tests
     "data": None,            # pd.DataFrame of current OHLCV data
     "data_path": None,       # str path of the loaded data file
     "prediction_results": [],
     "actual_data": [],
 }
+
+
+def _bounded_int(value: Any, *, default: int, minimum: int, maximum: int, field: str) -> int:
+    try:
+        parsed = int(value if value is not None else default)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be an integer") from exc
+    if parsed < minimum or parsed > maximum:
+        raise ValueError(f"{field} must be between {minimum} and {maximum}")
+    return parsed
+
+
+def _request_bool(value: Any, *, default: bool, field: str) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    raise ValueError(f"{field} must be a boolean")
+
+
+def _ensure_kronos_import_path() -> None:
+    repo_path = Path(_KRONOS_REPO_PATH).expanduser()
+    if (repo_path / "model").is_dir():
+        repo_path_str = str(repo_path.resolve())
+        if repo_path_str not in sys.path:
+            sys.path.insert(0, repo_path_str)
 
 # ---------------------------------------------------------------------------
 # Route registration
@@ -162,7 +242,7 @@ def _register_routes(app: Flask) -> None:
                 "status": "ok",
                 "service": "kronos-webui",
                 "version": "1.0.0",
-                "model_loaded": _state["model"] is not None,
+                "model_loaded": _state["predictor"] is not None,
                 "data_loaded": _state["data"] is not None,
                 "gemini_configured": bool(_GEMINI_API_KEY),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -200,7 +280,8 @@ def _register_routes(app: Flask) -> None:
             identity=username,
             additional_claims={"role": user["role"]},
         )
-        expires_in = int(app.config["JWT_ACCESS_TOKEN_EXPIRES"].total_seconds())
+        expires_config = app.config["JWT_ACCESS_TOKEN_EXPIRES"]
+        expires_in = None if expires_config is False else int(expires_config.total_seconds())
         logger.info("User %r logged in", username)
         return jsonify(
             {
@@ -281,6 +362,21 @@ def _register_routes(app: Flask) -> None:
 
         return jsonify({"files": found, "count": len(found)})
 
+    @app.get("/api/available-models")
+    def available_models():
+        return jsonify(
+            {
+                "models": [
+                    {
+                        "id": _KRONOS_MODEL_ID,
+                        "tokenizer_id": _KRONOS_TOKENIZER_ID,
+                        "max_context": _KRONOS_MAX_CONTEXT,
+                        "default": True,
+                    }
+                ]
+            }
+        )
+
     # -----------------------------------------------------------------------
     # Load data  (protected)
     # -----------------------------------------------------------------------
@@ -336,38 +432,57 @@ def _register_routes(app: Flask) -> None:
     @jwt_required()
     def load_model():
         """
-        Load a Kronos model checkpoint from disk.
+        Load a Kronos-base predictor.
 
         Request body (JSON):
-            {"model_path": "/path/to/checkpoint.pt", "device": "cpu"}
+            {
+                "model_id": "NeoQuasar/Kronos-base",
+                "tokenizer_id": "NeoQuasar/Kronos-Tokenizer-base",
+                "device": "cpu",
+                "allow_stub": false
+            }
         """
         body = request.get_json(silent=True) or {}
-        model_path_str: str = body.get("model_path", "").strip()
+        model_id: str = str(body.get("model_id") or body.get("model_path") or _KRONOS_MODEL_ID).strip()
+        tokenizer_id: str = str(body.get("tokenizer_id") or _KRONOS_TOKENIZER_ID).strip()
         device: str = body.get("device", "cpu")
+        try:
+            allow_stub = _request_bool(body.get("allow_stub"), default=_ALLOW_KRONOS_STUB, field="allow_stub")
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 422
 
-        if not model_path_str:
-            return jsonify({"error": "model_path is required"}), 400
-
-        model_path = Path(model_path_str)
-        if not model_path.exists():
-            return jsonify({"error": f"Checkpoint not found: {model_path_str}"}), 404
+        if not model_id:
+            return jsonify({"error": "model_id is required"}), 400
+        if not tokenizer_id:
+            return jsonify({"error": "tokenizer_id is required"}), 400
 
         try:
-            model = _load_kronos_model(model_path, device=device)
+            predictor = _load_kronos_predictor(
+                model_id=model_id,
+                tokenizer_id=tokenizer_id,
+                device=device,
+                allow_stub=allow_stub,
+            )
         except ImportError as exc:
             return jsonify({"error": f"Missing dependency: {exc}"}), 500
         except Exception as exc:  # noqa: BLE001
-            logger.exception("Failed to load model from %s", model_path_str)
+            logger.exception("Failed to load Kronos predictor from %s", model_id)
             return jsonify({"error": f"Model load error: {exc}"}), 500
 
-        _state["model"] = model
-        _state["model_path"] = str(model_path.resolve())
-        logger.info("Model loaded from %s on device=%s", model_path_str, device)
+        _state["model"] = getattr(predictor, "model", None)
+        _state["predictor"] = predictor
+        _state["model_id"] = model_id
+        _state["tokenizer_id"] = tokenizer_id
+        _state["model_path"] = model_id
+        logger.info("Kronos predictor loaded model=%s tokenizer=%s device=%s", model_id, tokenizer_id, device)
         return jsonify(
             {
                 "message": "Model loaded successfully",
-                "checkpoint": model_path.name,
+                "model_id": model_id,
+                "tokenizer_id": tokenizer_id,
+                "max_context": _KRONOS_MAX_CONTEXT,
                 "device": device,
+                "stub": isinstance(predictor, _StubPredictor),
             }
         )
 
@@ -388,23 +503,38 @@ def _register_routes(app: Flask) -> None:
                 "num_samples":    20            // monte-carlo samples
             }
         """
-        if _state["model"] is None:
+        if _state["predictor"] is None:
             return jsonify({"error": "No model loaded — call /api/load-model first"}), 400
         if _state["data"] is None:
             return jsonify({"error": "No data loaded — call /api/load-data first"}), 400
 
         body = request.get_json(silent=True) or {}
-        horizon: int = max(1, int(body.get("horizon", 24)))
-        context_length: int = max(1, int(body.get("context_length", 512)))
-        num_samples: int = max(1, int(body.get("num_samples", 20)))
+        try:
+            horizon = _bounded_int(body.get("horizon"), default=24, minimum=1, maximum=512, field="horizon")
+            context_length = _bounded_int(
+                body.get("context_length", body.get("lookback")),
+                default=_KRONOS_MAX_CONTEXT,
+                minimum=2,
+                maximum=_KRONOS_MAX_CONTEXT,
+                field="context_length",
+            )
+            sample_count = _bounded_int(
+                body.get("sample_count", body.get("num_samples")),
+                default=1,
+                minimum=1,
+                maximum=64,
+                field="sample_count",
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 422
 
         try:
             prediction_results, actual_data = _run_prediction(
-                model=_state["model"],
+                predictor=_state["predictor"],
                 df=_state["data"],
                 horizon=horizon,
                 context_length=context_length,
-                num_samples=num_samples,
+                sample_count=sample_count,
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("Prediction failed")
@@ -424,7 +554,11 @@ def _register_routes(app: Flask) -> None:
             {
                 "message": "Prediction completed",
                 "horizon": horizon,
+                "context_length": context_length,
+                "sample_count": sample_count,
                 "num_predictions": len(prediction_results),
+                "predictions": prediction_results,
+                "actual_data": actual_data,
                 "chart": chart_json,
                 "save_info": save_info,
             }
@@ -454,7 +588,7 @@ def _read_ohlcv_file(path: Path) -> pd.DataFrame:
     df.columns = [c.strip().lower() for c in df.columns]
 
     # Attempt to find and parse a date/time column
-    date_candidates = [c for c in df.columns if c in ("date", "datetime", "timestamp", "time", "index")]
+    date_candidates = [c for c in df.columns if c in ("date", "datetime", "timestamp", "timestamps", "time", "index")]
     if date_candidates:
         df[date_candidates[0]] = pd.to_datetime(df[date_candidates[0]], errors="coerce")
         df = df.set_index(date_candidates[0])
@@ -473,11 +607,13 @@ def _read_ohlcv_file(path: Path) -> pd.DataFrame:
         )
 
     # Coerce numeric types
-    for col in ["open", "high", "low", "close", "volume"]:
+    for col in ["open", "high", "low", "close", "volume", "amount"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
     df = df.dropna(subset=list(_REQUIRED_OHLCV_COLS))
+    if isinstance(df.index, pd.DatetimeIndex):
+        df = df[~df.index.isna()]
     return df
 
 
@@ -502,7 +638,7 @@ def _dataframe_summary(df: pd.DataFrame) -> dict[str, Any]:
 # Helper: load Kronos model
 # ---------------------------------------------------------------------------
 
-def _load_kronos_model(path: Path, device: str = "cpu") -> Any:
+def _legacy_load_kronos_model(path: Path, device: str = "cpu") -> Any:
     """
     Load a Kronos model checkpoint.
 
@@ -521,10 +657,10 @@ def _load_kronos_model(path: Path, device: str = "cpu") -> Any:
         logger.warning(
             "kronos or torch package not installed — using stub model for demo purposes"
         )
-        return _StubModel(checkpoint_path=str(path), device=device)
+        return _LegacyStubModel(checkpoint_path=str(path), device=device)
 
 
-class _StubModel:
+class _LegacyStubModel:
     """
     Minimal stub that mimics the Kronos model interface when the real
     package is not installed.  Returns random-walk predictions so the
@@ -567,7 +703,7 @@ class _StubModel:
 # Helper: run prediction
 # ---------------------------------------------------------------------------
 
-def _run_prediction(
+def _legacy_run_prediction(
     model: Any,
     df: pd.DataFrame,
     horizon: int,
@@ -595,7 +731,7 @@ def _run_prediction(
         future_index = list(range(horizon))
 
     # --- Model inference ---
-    if isinstance(model, _StubModel):
+    if isinstance(model, _LegacyStubModel):
         samples = model.forecast(context_arr, horizon=horizon, num_samples=num_samples)
     else:
         try:
@@ -610,7 +746,7 @@ def _run_prediction(
                 samples = samples[0]  # drop batch dim → (samples, horizon, 4)
         except Exception as exc:  # noqa: BLE001
             logger.error("Torch inference failed: %s — falling back to stub", exc)
-            stub = _StubModel(checkpoint_path="", device="cpu")
+            stub = _LegacyStubModel(checkpoint_path="", device="cpu")
             samples = stub.forecast(context_arr, horizon=horizon, num_samples=num_samples)
 
     # --- Summarise samples into prediction dicts ---
@@ -651,6 +787,136 @@ def _run_prediction(
             }
         )
 
+    return prediction_results, actual_data
+
+
+def _load_kronos_predictor(
+    *,
+    model_id: str,
+    tokenizer_id: str,
+    device: str = "cpu",
+    allow_stub: bool = False,
+) -> Any:
+    """Load Kronos-base through the upstream KronosPredictor API."""
+    _ensure_kronos_import_path()
+    try:
+        from model import Kronos, KronosPredictor, KronosTokenizer  # type: ignore[import-untyped]
+    except ImportError as exc:
+        if allow_stub and not _IS_PRODUCTION:
+            logger.warning("Kronos package unavailable; using explicit dev/test stub predictor")
+            return _StubPredictor(model_id=model_id, tokenizer_id=tokenizer_id, device=device)
+        raise ImportError("Kronos model package is not installed") from exc
+
+    tokenizer = KronosTokenizer.from_pretrained(tokenizer_id)
+    model = Kronos.from_pretrained(model_id)
+    if hasattr(model, "eval"):
+        model.eval()
+    return KronosPredictor(model, tokenizer, device=device, max_context=_KRONOS_MAX_CONTEXT)
+
+
+class _StubPredictor:
+    """Explicit dev/test predictor with the same predict() shape as KronosPredictor."""
+
+    def __init__(self, model_id: str, tokenizer_id: str, device: str) -> None:
+        self.model = None
+        self.model_id = model_id
+        self.tokenizer_id = tokenizer_id
+        self.device = device
+
+    def predict(
+        self,
+        df: pd.DataFrame,
+        x_timestamp: pd.Series,
+        y_timestamp: pd.Series,
+        pred_len: int,
+        sample_count: int = 1,
+    ) -> pd.DataFrame:
+        rng = np.random.default_rng(seed=42)
+        last_close = float(df["close"].iloc[-1])
+        closes = []
+        current = last_close
+        for _ in range(pred_len):
+            current = current * (1 + rng.normal(0, 0.01))
+            closes.append(current)
+
+        close_arr = np.array(closes, dtype=float)
+        noise = np.abs(rng.normal(0, last_close * 0.005, pred_len))
+        result = pd.DataFrame(
+            {
+                "open": close_arr - noise,
+                "high": close_arr + noise * 2,
+                "low": close_arr - noise * 2,
+                "close": close_arr,
+            }
+        )
+        if "volume" in df.columns:
+            result["volume"] = float(df["volume"].tail(min(len(df), 20)).mean())
+        if "amount" in df.columns:
+            result["amount"] = float(df["amount"].tail(min(len(df), 20)).mean())
+        result.index = pd.Index(y_timestamp.iloc[:pred_len], name="datetime")
+        return result
+
+
+def _timestamp_series_for_df(df: pd.DataFrame) -> pd.Series:
+    if isinstance(df.index, pd.DatetimeIndex):
+        return pd.Series(df.index, index=df.index)
+    return pd.Series(pd.RangeIndex(start=0, stop=len(df), step=1), index=df.index)
+
+
+def _future_timestamps(x_timestamp: pd.Series, horizon: int) -> pd.Series:
+    if len(x_timestamp) >= 2 and isinstance(x_timestamp.iloc[-1], pd.Timestamp):
+        freq_delta = x_timestamp.iloc[-1] - x_timestamp.iloc[-2]
+        if pd.isna(freq_delta) or freq_delta == pd.Timedelta(0):
+            freq_delta = pd.Timedelta(minutes=5)
+        return pd.Series([x_timestamp.iloc[-1] + freq_delta * (i + 1) for i in range(horizon)])
+    start = int(x_timestamp.iloc[-1]) + 1 if len(x_timestamp) else 0
+    return pd.Series(range(start, start + horizon))
+
+
+def _records_from_frame(df: pd.DataFrame, timestamp_fallback: pd.Series) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for idx, (_, row) in enumerate(df.iterrows()):
+        ts = df.index[idx] if not isinstance(df.index, pd.RangeIndex) else timestamp_fallback.iloc[idx]
+        item: dict[str, Any] = {"timestamp": ts.isoformat() if hasattr(ts, "isoformat") else str(ts)}
+        for col in ("open", "high", "low", "close", "volume", "amount", "close_p10", "close_p90"):
+            if col in row and pd.notna(row[col]):
+                item[col] = float(row[col])
+        records.append(item)
+    return records
+
+
+def _run_prediction(
+    predictor: Any,
+    df: pd.DataFrame,
+    horizon: int,
+    context_length: int,
+    sample_count: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Build Kronos predictor inputs, call predict(), and serialize the result."""
+    input_cols = [c for c in ("open", "high", "low", "close", "volume", "amount") if c in df.columns]
+    context_df = df[input_cols].tail(min(context_length, _KRONOS_MAX_CONTEXT)).copy()
+    if len(context_df) < 2:
+        raise ValueError("At least 2 context rows are required for prediction")
+
+    x_timestamp = _timestamp_series_for_df(context_df)
+    y_timestamp = _future_timestamps(x_timestamp, horizon)
+    pred_df = predictor.predict(
+        df=context_df,
+        x_timestamp=x_timestamp,
+        y_timestamp=y_timestamp,
+        pred_len=horizon,
+        sample_count=sample_count,
+    )
+    if "close" in pred_df.columns:
+        if "close_p10" not in pred_df.columns:
+            pred_df["close_p10"] = pred_df["close"]
+        if "close_p90" not in pred_df.columns:
+            pred_df["close_p90"] = pred_df["close"]
+
+    prediction_results = _records_from_frame(pred_df, timestamp_fallback=y_timestamp)
+    actual_tail = context_df.tail(min(100, len(context_df)))
+    actual_timestamps = x_timestamp.tail(len(actual_tail)).reset_index(drop=True)
+    actual_data = _records_from_frame(actual_tail, timestamp_fallback=actual_timestamps)
     return prediction_results, actual_data
 
 

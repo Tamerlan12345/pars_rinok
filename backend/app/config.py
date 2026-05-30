@@ -4,7 +4,7 @@ import os
 from functools import lru_cache
 from typing import Any
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -61,6 +61,24 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment.lower() == "production"
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self) -> "Settings":
+        if not self.is_production:
+            return self
+
+        if self.jwt_secret_key.startswith("CHANGE_ME") or len(self.jwt_secret_key) < 32:
+            raise ValueError("JWT_SECRET_KEY must be set to a strong 32+ character secret in production")
+
+        weak_passwords = {
+            "centras_admin_2024",
+            "change-me-strong-password",
+            "CHANGE_ME",
+        }
+        if self.admin_password in weak_passwords or len(self.admin_password) < 12:
+            raise ValueError("ADMIN_PASSWORD must be changed to a strong 12+ character password in production")
+
+        return self
 
 
 @lru_cache(maxsize=1)

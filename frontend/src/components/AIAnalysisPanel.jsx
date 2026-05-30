@@ -156,7 +156,7 @@ export default function AIAnalysisPanel() {
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 280px', gap: '16px' }}>
+      <div className="analysis-grid">
         {/* Main analysis */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Result card */}

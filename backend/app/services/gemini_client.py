@@ -215,7 +215,7 @@ async def analyze_with_gemini(
         logger.error("Gemini request timed out after 30s for ticker %s", ticker)
         return {
             **dict(_MOCK_RESPONSE),
-            "summary": "Gemini request timed out. Please retry.",
+            "summary": "Gemini timeout. Please retry.",
             "risk_factors": ["Gemini timeout"],
             "mock_mode": True,
         }
