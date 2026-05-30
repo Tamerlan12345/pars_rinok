@@ -68,7 +68,6 @@ def _period_to_days(period: str) -> int:
 
 def _df_to_candles(df: "pandas.DataFrame") -> list[dict]:
     """Convert a OHLCV DataFrame (any source) to candle dicts."""
-    from datetime import timezone as tz
     candles: list[dict] = []
     for ts, row in df.iterrows():
         try:
@@ -81,10 +80,10 @@ def _df_to_candles(df: "pandas.DataFrame") -> list[dict]:
             continue
         if close <= 0:
             continue
-        if hasattr(ts, "tzinfo") and ts.tzinfo is not None:
-            timestamp = ts.to_pydatetime()
-        else:
-            timestamp = ts.to_pydatetime().replace(tzinfo=tz.utc)
+        # Ensure timestamp is naive (UTC) to avoid asyncpg naive/aware subtraction error
+        timestamp = ts.to_pydatetime()
+        if timestamp.tzinfo is not None:
+            timestamp = timestamp.replace(tzinfo=None)
         candles.append({
             "timestamp": timestamp,
             "open": open_,
@@ -181,7 +180,7 @@ def _fetch_via_yahoo_chart(ticker: str, period: str, interval: str) -> list[dict
         if close <= 0:
             continue
         candles.append({
-            "timestamp": datetime.fromtimestamp(ts, tz=tz.utc),
+            "timestamp": datetime.fromtimestamp(ts, tz=tz.utc).replace(tzinfo=None),
             "open": open_,
             "high": high,
             "low": low,
