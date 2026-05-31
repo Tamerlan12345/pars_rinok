@@ -91,7 +91,7 @@ export default function NewsPanel() {
       setNews(r.data || [])
       setLastUpdated(new Date())
     } catch (err) {
-      setError(err.response?.data?.detail || err.message || 'Failed to load news')
+      setError(err.response?.data?.detail || err.message || 'Ошибка загрузки новостей')
     } finally {
       setLoading(false)
     }
@@ -108,7 +108,7 @@ export default function NewsPanel() {
       }
     } catch (err) {
       // Ignore fetch errors, we still want to show DB data
-      console.warn('Failed to fetch from upstream:', err)
+      console.warn('Ошибка загрузки из источника:', err)
     }
     await loadNewsFromDB(filterTicker, limit)
   }, [filterTicker, limit, loadNewsFromDB])
@@ -128,7 +128,7 @@ export default function NewsPanel() {
       await newsApi.fetchNews(fetchTicker.trim().toUpperCase())
       await loadNewsFromDB(filterTicker)
     } catch (err) {
-      setError(err.response?.data?.detail || err.message || 'Failed to fetch news')
+      setError(err.response?.data?.detail || err.message || 'Ошибка запроса новостей')
     } finally {
       setFetching(false)
     }
@@ -155,13 +155,13 @@ export default function NewsPanel() {
       <div className="glass-card" style={{ padding: '20px 24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <h2 className="section-title">Market News</h2>
+            <h2 className="section-title">Рыночные новости</h2>
             <span className="badge badge-muted">{displayedNews.length}</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             {lastUpdated && (
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                Updated {formatDistanceToNow(lastUpdated, { addSuffix: true })}
+                Обновлено {formatDistanceToNow(lastUpdated, { addSuffix: true })}
               </span>
             )}
             <select
@@ -173,14 +173,14 @@ export default function NewsPanel() {
                 loadNewsFromDB(filterTicker, Number(e.target.value))
               }}
             >
-              {[20, 50, 100].map(n => <option key={n} value={n}>{n} items</option>)}
+              {[20, 50, 100].map(n => <option key={n} value={n}>{n} записей</option>)}
             </select>
             <button
               className="btn btn-secondary btn-sm"
               onClick={handleManualRefresh}
               disabled={loading}
             >
-              {loading ? <span className="spinner spinner-sm" /> : '↺ Refresh'}
+              {loading ? <span className="spinner spinner-sm" /> : '↺ Обновить'}
             </button>
           </div>
         </div>
@@ -188,11 +188,11 @@ export default function NewsPanel() {
         {/* Fetch new news row */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div className="form-group" style={{ flex: '1 1 160px' }}>
-            <label className="input-label">Fetch news for ticker</label>
+            <label className="input-label">Загрузить новости по тикеру</label>
             <input
               className="input-field"
               type="text"
-              placeholder="e.g. TSLA"
+              placeholder="напр. TSLA"
               value={fetchTicker}
               onChange={e => setFetchTicker(e.target.value.toUpperCase())}
               onKeyDown={e => e.key === 'Enter' && handleFetchNews()}
@@ -204,7 +204,7 @@ export default function NewsPanel() {
             onClick={handleFetchNews}
             disabled={fetching || !fetchTicker.trim()}
           >
-            {fetching ? '' : '↓ Fetch News'}
+            {fetching ? '' : '↓ Загрузить'}
           </button>
         </div>
 
@@ -241,11 +241,11 @@ export default function NewsPanel() {
         <div className="glass-card">
           <div className="empty-state">
             <div className="empty-state-icon">◎</div>
-            <div className="empty-state-title">No news found</div>
+            <div className="empty-state-title">Новости не найдены</div>
             <div className="empty-state-sub">
               {filterTicker !== 'ALL'
-                ? `No news for ${filterTicker}. Try fetching it above.`
-                : 'Enter a ticker and fetch news from the controls above'}
+                ? `Нет новостей для ${filterTicker}. Запросите их выше.`
+                : 'Укажите тикер и загрузите новости через форму выше'}
             </div>
           </div>
         </div>

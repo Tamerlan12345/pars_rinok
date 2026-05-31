@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback } from 'react'
 import { healthApi } from '../api/client.js'
 
 const VIEWS = [
-  { id: 'dashboard', label: 'Dashboard',  icon: '⬡' },
-  { id: 'analysis',  label: 'Analysis',   icon: '◈' },
-  { id: 'news',      label: 'News',       icon: '◎' },
-  { id: 'logs',      label: 'Logs',       icon: '▤' }
+  { id: 'dashboard', label: 'Дашборд',  icon: '⬡' },
+  { id: 'analysis',  label: 'Аналитика',   icon: '◈' },
+  { id: 'news',      label: 'Новости',       icon: '◎' },
+  { id: 'logs',      label: 'Журнал',       icon: '▤' }
 ]
 
 function LogoMark() {
@@ -58,9 +58,9 @@ export default function Navbar({ currentView, setCurrentView, onLogout }) {
   }, [checkHealth])
 
   const healthLabel = {
-    online:   'Backend Online',
-    offline:  'Backend Offline',
-    checking: 'Checking…'
+    online:   'Сервер доступен',
+    offline:  'Сервер недоступен',
+    checking: 'Проверка…'
   }[healthStatus]
 
   return (
@@ -164,7 +164,7 @@ export default function Navbar({ currentView, setCurrentView, onLogout }) {
             <polyline points="16 17 21 12 16 7"/>
             <line x1="21" y1="12" x2="9" y2="12"/>
           </svg>
-          Sign out
+          Выйти
         </button>
       </div>
     </nav>

@@ -49,7 +49,7 @@ function ContextCell({ context }) {
           fontFamily: 'inherit'
         }}
       >
-        {open ? '▲ hide' : '▼ json'}
+        {open ? '▲ скрыть' : '▼ json'}
       </button>
       {open && (
         <pre style={{
@@ -166,13 +166,13 @@ export default function LogsPanel() {
       {/* Toolbar */}
       <div className="glass-card" style={{ padding: '16px 24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-          <h2 className="section-title">System Logs</h2>
+          <h2 className="section-title">Системный журнал</h2>
 
           {/* SSE indicator */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span className={`status-dot ${sseConnected ? 'online' : 'offline'}`} />
             <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-              {sseConnected ? 'Live' : 'Polling'}
+              {sseConnected ? 'Онлайн' : 'Опрос'}
             </span>
           </div>
 
@@ -185,7 +185,7 @@ export default function LogsPanel() {
                 key={lv}
                 className={`btn btn-sm ${levelFilter === lv ? 'btn-primary' : 'btn-ghost'}`}
                 onClick={() => setLevelFilter(lv)}
-                title={lv === 'ALL' ? 'Show all levels' : `Show ${lv} only (${levelCounts[lv] || 0})`}
+                title={lv === 'ALL' ? 'Показать все' : `Только ${lv} (${levelCounts[lv] || 0})`}
               >
                 {lv}
                 {lv !== 'ALL' && levelCounts[lv] > 0 && (
@@ -212,16 +212,16 @@ export default function LogsPanel() {
               loadLogs(Number(e.target.value))
             }}
           >
-            {LIMIT_OPTIONS.map(n => <option key={n} value={n}>{n} lines</option>)}
+            {LIMIT_OPTIONS.map(n => <option key={n} value={n}>{n} строк</option>)}
           </select>
 
           {/* Auto-scroll toggle */}
           <button
             className={`btn btn-sm ${autoScroll ? 'btn-secondary' : 'btn-ghost'}`}
             onClick={() => setAutoScroll(v => !v)}
-            title="Toggle auto-scroll to bottom"
+            title="Автопрокрутка вниз"
           >
-            {autoScroll ? '⬇ Auto-scroll ON' : '⬇ Auto-scroll OFF'}
+            {autoScroll ? '⬇ Автопрокрутка ВКЛ' : '⬇ Автопрокрутка ВЫКЛ'}
           </button>
 
           {/* Refresh */}
@@ -230,12 +230,12 @@ export default function LogsPanel() {
             onClick={() => loadLogs()}
             disabled={loading}
           >
-            {loading ? <span className="spinner spinner-sm" /> : '↺ Refresh'}
+            {loading ? <span className="spinner spinner-sm" /> : '↺ Обновить'}
           </button>
 
           {/* Clear */}
           <button className="btn btn-danger btn-sm" onClick={handleClearDisplay}>
-            ✕ Clear
+            ✕ Очистить
           </button>
         </div>
 
@@ -251,16 +251,16 @@ export default function LogsPanel() {
         {loading && displayed.length === 0 ? (
           <div className="loading-overlay">
             <span className="spinner" />
-            <span>Loading logs…</span>
+            <span>Загрузка логов…</span>
           </div>
         ) : displayed.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">▤</div>
-            <div className="empty-state-title">No log entries</div>
+            <div className="empty-state-title">Нет записей в журнале</div>
             <div className="empty-state-sub">
               {levelFilter !== 'ALL'
-                ? `No ${levelFilter} entries in the current batch`
-                : 'No logs yet — refresh or wait for activity'}
+                ? `Нет записей типа ${levelFilter}`
+                : 'Журнал пуст — обновите или дождитесь событий'}
             </div>
           </div>
         ) : (
@@ -275,11 +275,11 @@ export default function LogsPanel() {
             <table className="data-table" style={{ minWidth: '800px' }}>
               <thead>
                 <tr>
-                  <th style={{ width: '180px' }}>Timestamp</th>
-                  <th style={{ width: '90px' }}>Level</th>
-                  <th style={{ width: '160px' }}>Event</th>
-                  <th>Message</th>
-                  <th style={{ width: '120px' }}>Context</th>
+                  <th style={{ width: '180px' }}>Время</th>
+                  <th style={{ width: '90px' }}>Уровень</th>
+                  <th style={{ width: '160px' }}>Событие</th>
+                  <th>Сообщение</th>
+                  <th style={{ width: '120px' }}>Контекст</th>
                 </tr>
               </thead>
               <tbody>
@@ -319,7 +319,7 @@ export default function LogsPanel() {
       {/* Stats footer */}
       {displayed.length > 0 && (
         <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
-          <span>Showing <strong style={{ color: 'var(--text-secondary)' }}>{displayed.length}</strong> of {logs.length} entries</span>
+          <span>Показано <strong style={{ color: 'var(--text-secondary)' }}>{displayed.length}</strong> из {logs.length} записей</span>
           {Object.entries(levelCounts).filter(([, c]) => c > 0).map(([lv, c]) => (
             <span key={lv} style={{ color: LEVEL_STYLES[lv]?.color }}>
               {lv}: {c}

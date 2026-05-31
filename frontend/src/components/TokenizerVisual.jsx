@@ -30,8 +30,8 @@ function TokenCell({ value, size, isCoarse, index }) {
   const [showTooltip, setShowTooltip] = useState(false)
   const bg = isCoarse ? tokenColor(value) : `rgba(99, 102, 241, ${fineOpacity(value)})`
   const tooltip = isCoarse
-    ? `Token ${value} (coarse)`
-    : `Token ${value} (fine, opacity ${fineOpacity(value).toFixed(2)})`
+    ? `Токен ${value} (макро)`
+    : `Токен ${value} (микро, прозрачность ${fineOpacity(value).toFixed(2)})`
 
   return (
     <div
@@ -66,10 +66,10 @@ export default function TokenizerVisual({ analysis }) {
   return (
     <div className="glass-card" style={{ padding: '20px 24px', animation: 'slideInUp 0.4s ease' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-        <h2 className="section-title">Tokenization Map</h2>
+        <h2 className="section-title">Карта токенизации</h2>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <span className="badge badge-indigo">Total: {totalTokens}</span>
-          <span className="badge badge-muted">Unique: {uniqueTokens}</span>
+          <span className="badge badge-indigo">Всего: {totalTokens}</span>
+          <span className="badge badge-muted">Уник: {uniqueTokens}</span>
           <span className="badge badge-cyan">H={entropy}</span>
         </div>
       </div>
@@ -77,7 +77,7 @@ export default function TokenizerVisual({ analysis }) {
       {/* Coarse tokens */}
       <div style={{ marginBottom: '12px' }}>
         <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-          Coarse Tokens ({coarseTokens.length})
+          Макротокены (Тренд) ({coarseTokens.length})
         </div>
         <div className="token-grid">
           {coarseTokens.map((v, i) => (
@@ -90,7 +90,7 @@ export default function TokenizerVisual({ analysis }) {
       {fineTokens.length > 0 && (
         <div style={{ marginBottom: '16px' }}>
           <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-            Fine Tokens ({fineTokens.length})
+            Микротокены (Волатильность) ({fineTokens.length})
           </div>
           <div className="token-grid">
             {fineTokens.map((v, i) => (
@@ -102,7 +102,7 @@ export default function TokenizerVisual({ analysis }) {
 
       {/* Legend */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginTop: '4px' }}>
-        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Low volatility</span>
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Низкая волатильность</span>
         <div style={{ display: 'flex', gap: '3px', alignItems: 'center', flex: 1 }}>
           {[0, 8, 16, 24].map(v => (
             <div
@@ -116,7 +116,7 @@ export default function TokenizerVisual({ analysis }) {
             />
           ))}
         </div>
-        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>High volatility</span>
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Высокая волатильность</span>
       </div>
 
       {/* Stats row */}
@@ -129,9 +129,9 @@ export default function TokenizerVisual({ analysis }) {
         borderTop: '1px solid var(--glass-border)'
       }}>
         {[
-          { label: 'Total Tokens', value: totalTokens },
-          { label: 'Unique Tokens', value: uniqueTokens },
-          { label: 'Shannon Entropy', value: `${entropy} bits` }
+          { label: 'Всего токенов', value: totalTokens },
+          { label: 'Уникальных токенов', value: uniqueTokens },
+          { label: 'Энтропия Шеннона', value: `${entropy} бит` }
         ].map(({ label, value }) => (
           <div key={label} style={{ textAlign: 'center' }}>
             <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--accent-cyan)' }}>{value}</div>

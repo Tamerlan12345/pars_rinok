@@ -77,7 +77,7 @@ export default function Dashboard() {
       const r = await marketApi.getCandles(ticker.trim().toUpperCase(), interval, 300)
       setCandles(r.data || [])
     } catch (err) {
-      setFetchError(err.response?.data?.detail || err.message || 'Failed to fetch market data')
+      setFetchError(err.response?.data?.detail || err.message || 'Ошибка загрузки рыночных данных')
     } finally {
       setFetchLoading(false)
       setCandlesLoading(false)
@@ -92,7 +92,7 @@ export default function Dashboard() {
       const r = await analysisApi.runAnalysis(ticker.trim().toUpperCase(), period, interval, forecastHorizon)
       setAnalysis(r.data)
     } catch (err) {
-      setAnalysisError(err.response?.data?.detail || err.message || 'Analysis failed')
+      setAnalysisError(err.response?.data?.detail || err.message || 'Ошибка выполнения анализа')
     } finally {
       setAnalysisLoading(false)
     }
@@ -106,7 +106,7 @@ export default function Dashboard() {
       const r = await marketApi.getCandles(ticker.trim().toUpperCase(), interval, 300)
       setCandles(r.data || [])
     } catch (err) {
-      setCandlesError(err.response?.data?.detail || err.message || 'Failed to load candles')
+      setCandlesError(err.response?.data?.detail || err.message || 'Ошибка загрузки свечей')
     } finally {
       setCandlesLoading(false)
     }
@@ -125,25 +125,25 @@ export default function Dashboard() {
       {/* Stat cards */}
       <div className="stats-grid">
         <StatCard
-          label="Active Tickers"
+          label="Активные тикеры"
           value={tickers.length || '0'}
-          sub="Tracked instruments"
+          sub="Отслеживаемые инструменты"
           accentColor="var(--accent-primary)"
         />
         <StatCard
-          label="Last Analysis"
+          label="Последний анализ"
           value={lastAnalysisTime}
           sub={analysis?.ticker || '—'}
           accentColor="var(--accent-cyan)"
         />
         <StatCard
-          label="Data Points"
+          label="Точки данных"
           value={candles.length > 0 ? candles.length.toLocaleString() : '0'}
           sub={`${ticker.toUpperCase()} · ${interval}`}
           accentColor="var(--accent-secondary)"
         />
         <StatCard
-          label="AI Confidence"
+          label="Уверенность модели"
           value={confidence}
           sub={analysis?.sentiment || '—'}
           accentColor="var(--success)"
@@ -154,11 +154,11 @@ export default function Dashboard() {
       <div className="glass-card" style={{ padding: '20px 24px', marginBottom: '16px' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end' }}>
           <div className="form-group" style={{ flex: '1 1 160px', minWidth: '120px' }}>
-            <label className="input-label">Ticker Symbol</label>
+            <label className="input-label">Тикер</label>
             <input
               className="input-field"
               type="text"
-              placeholder="e.g. AAPL, TSLA"
+              placeholder="напр. AAPL, TSLA"
               value={ticker}
               onChange={e => setTicker(e.target.value.toUpperCase())}
               onKeyDown={e => e.key === 'Enter' && handleFetchData()}
@@ -167,7 +167,7 @@ export default function Dashboard() {
           </div>
 
           <div className="form-group" style={{ flex: '0 0 120px' }}>
-            <label className="input-label">Period</label>
+            <label className="input-label">История</label>
             <select
               className="select-field"
               value={period}
@@ -178,7 +178,7 @@ export default function Dashboard() {
           </div>
 
           <div className="form-group" style={{ flex: '0 0 120px' }}>
-            <label className="input-label">Interval</label>
+            <label className="input-label">Таймфрейм</label>
             <select
               className="select-field"
               value={interval}
@@ -189,7 +189,7 @@ export default function Dashboard() {
           </div>
 
           <div className="form-group" style={{ flex: '0 0 140px' }}>
-            <label className="input-label" style={{ color: 'var(--accent-cyan)' }}>AI Horizon</label>
+            <label className="input-label" style={{ color: 'var(--accent-cyan)' }}>Горизонт прогноза</label>
             <select
               className="select-field"
               value={forecastHorizon}
@@ -206,22 +206,22 @@ export default function Dashboard() {
               onClick={handleFetchData}
               disabled={fetchLoading || !ticker.trim()}
             >
-              {fetchLoading ? '' : '↓ Fetch Data'}
+              {fetchLoading ? '' : '↓ Загрузить данные'}
             </button>
             <button
               className={`btn btn-primary${analysisLoading ? ' btn-loading' : ''}`}
               onClick={handleRunAnalysis}
               disabled={analysisLoading || !ticker.trim()}
             >
-              {analysisLoading ? '' : '⚡ Run AI Analysis'}
+              {analysisLoading ? '' : '⚡ Запустить анализ'}
             </button>
             <button
               className="btn btn-ghost btn-sm"
               onClick={loadCandles}
               disabled={candlesLoading || !ticker.trim()}
-              title="Reload chart from cache"
+              title="Перезагрузить график"
             >
-              ↺ Chart
+              ↺ График
             </button>
           </div>
         </div>
@@ -253,10 +253,10 @@ export default function Dashboard() {
       <div className="glass-card" style={{ padding: '20px 24px', marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
           <h2 className="section-title">
-            {ticker.toUpperCase()} Candlestick Chart
+            {ticker.toUpperCase()} Свечной график
           </h2>
           {candles.length > 0 && (
-            <span className="badge badge-muted">{candles.length} candles</span>
+            <span className="badge badge-muted">{candles.length} свечей</span>
           )}
         </div>
         <CandleChart candles={candles} loading={candlesLoading} ticker={ticker} analysis={analysis} />
@@ -273,7 +273,7 @@ export default function Dashboard() {
       <div className="dashboard-grid">
         {/* Latest analysis summary */}
         <div className="glass-card" style={{ padding: '20px 24px' }}>
-          <h2 className="section-title" style={{ marginBottom: '16px' }}>Latest AI Analysis</h2>
+          <h2 className="section-title" style={{ marginBottom: '16px' }}>Квантитативная аналитика</h2>
           {analysisLoading ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {[80, 60, 90, 50].map((w, i) => (
@@ -294,7 +294,7 @@ export default function Dashboard() {
               {analysis.confidence != null && (
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Confidence</span>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Уверенность</span>
                     <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--accent-cyan)' }}>{confidence}</span>
                   </div>
                   <div className="confidence-bar-track">
@@ -309,8 +309,8 @@ export default function Dashboard() {
           ) : (
             <div className="empty-state">
               <div className="empty-state-icon">◈</div>
-              <div className="empty-state-title">No analysis yet</div>
-              <div className="empty-state-sub">Enter a ticker and click "Run AI Analysis"</div>
+              <div className="empty-state-title">Нет данных анализа</div>
+              <div className="empty-state-sub">Укажите тикер и нажмите «Запустить анализ»</div>
             </div>
           )}
         </div>
@@ -318,7 +318,7 @@ export default function Dashboard() {
         {/* Latest news */}
         <div className="glass-card" style={{ padding: '20px 24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-            <h2 className="section-title">Latest News</h2>
+            <h2 className="section-title">Сводка новостей</h2>
             <button
               className="btn btn-ghost btn-sm"
               onClick={() => {
@@ -366,8 +366,8 @@ export default function Dashboard() {
           ) : (
             <div className="empty-state">
               <div className="empty-state-icon">◎</div>
-              <div className="empty-state-title">No news loaded</div>
-              <div className="empty-state-sub">Fetch news from the News panel</div>
+              <div className="empty-state-title">Новости не загружены</div>
+              <div className="empty-state-sub">Ожидание рыночного фона...</div>
             </div>
           )}
         </div>

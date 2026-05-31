@@ -108,14 +108,14 @@ export default function LoginPage({ setToken }) {
     try {
       const res = await authApi.login(username.trim(), password)
       const t = res.data?.access_token || res.data?.token
-      if (!t) throw new Error('No token in server response')
+      if (!t) throw new Error('Токен авторизации не получен')
       setToken(t)
     } catch (err) {
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.message ||
         err.message ||
-        'Login failed. Check credentials and try again.'
+        'Ошибка входа. Проверьте данные и повторите попытку.'
       setError(msg)
     } finally {
       setLoading(false)
@@ -151,18 +151,18 @@ export default function LoginPage({ setToken }) {
             textTransform: 'uppercase',
             marginBottom: '36px'
           }}>
-            Financial Intelligence Platform
+            Аналитическая платформа
           </p>
 
           {/* Form */}
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div className="form-group">
-              <label className="input-label" htmlFor="login-username">Username</label>
+              <label className="input-label" htmlFor="login-username">Имя пользователя</label>
               <input
                 id="login-username"
                 className="input-field"
                 type="text"
-                placeholder="Enter your username"
+                placeholder="Введите имя пользователя"
                 value={username}
                 onChange={e => setUsername(e.target.value)}
                 autoComplete="username"
@@ -173,12 +173,12 @@ export default function LoginPage({ setToken }) {
             </div>
 
             <div className="form-group">
-              <label className="input-label" htmlFor="login-password">Password</label>
+              <label className="input-label" htmlFor="login-password">Пароль</label>
               <input
                 id="login-password"
                 className="input-field"
                 type="password"
-                placeholder="Enter your password"
+                placeholder="Введите пароль"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 autoComplete="current-password"
@@ -200,7 +200,7 @@ export default function LoginPage({ setToken }) {
               disabled={loading || !username.trim() || !password}
               style={{ marginTop: '4px' }}
             >
-              {loading ? '' : 'Sign In'}
+              {loading ? '' : 'Войти'}
             </button>
           </form>
 
@@ -211,7 +211,7 @@ export default function LoginPage({ setToken }) {
             fontSize: '12px',
             color: 'var(--text-muted)'
           }}>
-            Centras Tokenizer v1.0 · AI-powered market analysis
+            Centras Tokenizer v1.0 · Предиктивная аналитика
           </p>
         </div>
 

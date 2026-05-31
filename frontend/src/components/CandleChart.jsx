@@ -13,11 +13,11 @@ function EmptyState({ ticker }) {
   return (
     <div className="empty-state" style={{ height: '400px' }}>
       <div className="empty-state-icon">◈</div>
-      <div className="empty-state-title">No chart data</div>
+      <div className="empty-state-title">График недоступен</div>
       <div className="empty-state-sub">
         {ticker
-          ? `Fetch data for ${ticker.toUpperCase()} then click "↺ Chart" to load`
-          : 'Enter a ticker symbol and fetch data'}
+          ? `Загрузите данные для ${ticker.toUpperCase()} и нажмите «↺ График»`
+          : 'Укажите тикер и загрузите данные'}
       </div>
     </div>
   )
@@ -30,6 +30,7 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
   const volumeSeriesRef = useRef(null)
   const resizeObserverRef = useRef(null)
   const priceLinesRef = useRef([])
+  const forecastSeriesRef = useRef(null)
 
   const destroyChart = useCallback(() => {
     if (resizeObserverRef.current) {
@@ -42,6 +43,7 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
       candleSeriesRef.current = null
       volumeSeriesRef.current = null
       priceLinesRef.current = []
+      forecastSeriesRef.current = null
     }
   }, [])
 
@@ -204,7 +206,7 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
 
   // Draw price lines for AI forecast and key levels
   useEffect(() => {
-    if (!candleSeriesRef.current) return
+    if (!candleSeriesRef.current || !chartRef.current) return
     
     // Clear old lines
     priceLinesRef.current.forEach(line => {
@@ -214,11 +216,18 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
     })
     priceLinesRef.current = []
 
+    if (forecastSeriesRef.current) {
+      try {
+        chartRef.current.removeSeries(forecastSeriesRef.current)
+      } catch (e) {}
+      forecastSeriesRef.current = null
+    }
+
     if (!analysis) return
 
     const keyLevels = analysis.key_levels || analysis.gemini_key_levels || []
     const target = analysis.forecast_price_target
-    const dir = analysis.forecast_direction
+    const period = analysis.forecast_period
 
     if (Array.isArray(keyLevels)) {
       keyLevels.forEach(lvl => {
@@ -234,17 +243,40 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
       })
     }
 
-    if (target != null) {
-      // Highlight forecast target with thick bright cyan
-      const line = candleSeriesRef.current.createPriceLine({
-        price: Number(target),
-        color: '#00e5ff',
-        lineWidth: 3,
-        lineStyle: LineStyle.Solid,
-        axisLabelVisible: true,
-        title: 'Цель (ИИ)',
-      })
-      priceLinesRef.current.push(line)
+    if (target != null && candles.length > 0) {
+      // Find the last candle to use as a starting point
+      const sorted = [...candles].sort((a, b) => Number(a.time) - Number(b.time))
+      const lastCandle = sorted[sorted.length - 1]
+      
+      const lastDate = new Date(Number(lastCandle.time) * 1000)
+      
+      if (!Number.isNaN(lastDate.getTime())) {
+        // Determine days to add based on horizon
+        let daysToAdd = 90
+        if (period === '1 неделя') daysToAdd = 7
+        else if (period === '1 месяц') daysToAdd = 30
+        else if (period === '3 месяца') daysToAdd = 90
+        else if (period === '6 месяцев') daysToAdd = 180
+        else if (period === '1 год') daysToAdd = 365
+        
+        const futureDate = new Date(lastDate.getTime() + daysToAdd * 24 * 60 * 60 * 1000)
+        const futureTimeStr = `${futureDate.getUTCFullYear()}-${String(futureDate.getUTCMonth() + 1).padStart(2, '0')}-${String(futureDate.getUTCDate()).padStart(2, '0')}`
+        const lastTimeStr = `${lastDate.getUTCFullYear()}-${String(lastDate.getUTCMonth() + 1).padStart(2, '0')}-${String(lastDate.getUTCDate()).padStart(2, '0')}`
+
+        forecastSeriesRef.current = chartRef.current.addLineSeries({
+          color: '#00e5ff',
+          lineWidth: 3,
+          lineStyle: LineStyle.Solid,
+          lastValueVisible: true,
+          priceLineVisible: false,
+          crosshairMarkerVisible: true,
+        })
+
+        forecastSeriesRef.current.setData([
+          { time: lastTimeStr, value: Number(lastCandle.close) },
+          { time: futureTimeStr, value: Number(target) }
+        ])
+      }
     }
   }, [analysis, candles])
 
