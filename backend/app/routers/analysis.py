@@ -65,7 +65,14 @@ async def run_analysis(
     recent_headlines = [row[0] for row in news_result.all()]
 
     # Step 4: Gemini analysis
-    gemini_result = await analyze_with_gemini(token_repr, body.ticker, recent_headlines, forecast_horizon=body.forecast_horizon)
+    current_price = candles[-1].close if candles else 0.0
+    gemini_result = await analyze_with_gemini(
+        token_repr, 
+        body.ticker, 
+        recent_headlines, 
+        current_price=float(current_price), 
+        forecast_horizon=body.forecast_horizon
+    )
     mock_mode = gemini_result.get("mock_mode", False)
 
     # Step 5: persist analysis

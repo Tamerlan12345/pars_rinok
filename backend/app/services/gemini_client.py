@@ -76,14 +76,15 @@ _MOCK_RESPONSE: dict[str, Any] = {
 }
 
 
-def _build_prompt(token_repr: str, ticker: str, recent_news: list[str], forecast_horizon: str = "3 месяца") -> str:
+def _build_prompt(token_repr: str, ticker: str, recent_news: list[str], current_price: float, forecast_horizon: str = "3 месяца") -> str:
     news_block = ""
     if recent_news:
         headlines = "\n".join(f"  - {h}" for h in recent_news[:5])
         news_block = f"\nПоследние новости по инструменту:\n{headlines}\n"
 
     return (
-        f"Проанализируй токенизированные данные OHLCV для инструмента {ticker}.\n\n"
+        f"Проанализируй токенизированные данные OHLCV для инструмента {ticker}.\n"
+        f"ВНИМАНИЕ: Текущая последняя цена актива составляет {current_price:.2f}\n\n"
         f"{token_repr}\n"
         f"{news_block}\n"
         f"На основе этих данных:\n"
@@ -217,6 +218,7 @@ async def analyze_with_gemini(
     token_repr: str,
     ticker: str,
     recent_news: list[str],
+    current_price: float,
     forecast_horizon: str = "3 месяца",
 ) -> dict[str, Any]:
     """
@@ -242,7 +244,7 @@ async def analyze_with_gemini(
         logger.info("GEMINI_API_KEY not set — returning mock analysis for %s", ticker)
         return dict(_MOCK_RESPONSE)  # copy to prevent mutation of module constant
 
-    prompt = _build_prompt(token_repr, ticker, recent_news, forecast_horizon=forecast_horizon)
+    prompt = _build_prompt(token_repr, ticker, recent_news, current_price, forecast_horizon=forecast_horizon)
 
     try:
         result = await _call_with_retry(prompt, settings.gemini_model, settings.gemini_api_key)
