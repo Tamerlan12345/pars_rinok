@@ -23,12 +23,14 @@ function EmptyState({ ticker }) {
   )
 }
 
-export default function CandleChart({ candles = [], loading = false, ticker = '' }) {
+export default function CandleChart({ candles = [], loading = false, ticker = '', analysis = null }) {
   const containerRef = useRef(null)
   const chartRef = useRef(null)
   const candleSeriesRef = useRef(null)
   const volumeSeriesRef = useRef(null)
+  const volumeSeriesRef = useRef(null)
   const resizeObserverRef = useRef(null)
+  const priceLinesRef = useRef([])
 
   const destroyChart = useCallback(() => {
     if (resizeObserverRef.current) {
@@ -38,8 +40,10 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
     if (chartRef.current) {
       chartRef.current.remove()
       chartRef.current = null
+      chartRef.current = null
       candleSeriesRef.current = null
       volumeSeriesRef.current = null
+      priceLinesRef.current = []
     }
   }, [])
 
@@ -191,6 +195,7 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
     const volumes = uniqueSorted.map(({ time, value, color }) => ({ time, value, color }))
 
     try {
+    try {
       candleSeriesRef.current.setData(ohlcv)
       volumeSeriesRef.current.setData(volumes)
       chartRef.current?.timeScale().fitContent()
@@ -199,6 +204,52 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
       console.warn('[CandleChart] setData error:', err.message)
     }
   }, [candles])
+
+  // Draw price lines for AI forecast and key levels
+  useEffect(() => {
+    if (!candleSeriesRef.current) return
+    
+    // Clear old lines
+    priceLinesRef.current.forEach(line => {
+      try {
+        candleSeriesRef.current.removePriceLine(line)
+      } catch (e) {}
+    })
+    priceLinesRef.current = []
+
+    if (!analysis) return
+
+    const keyLevels = analysis.key_levels || analysis.gemini_key_levels || []
+    const target = analysis.forecast_price_target
+    const dir = analysis.forecast_direction
+
+    if (Array.isArray(keyLevels)) {
+      keyLevels.forEach(lvl => {
+        const line = candleSeriesRef.current.createPriceLine({
+          price: Number(lvl),
+          color: 'rgba(6, 182, 212, 0.7)',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: 'Уровень',
+        })
+        priceLinesRef.current.push(line)
+      })
+    }
+
+    if (target != null) {
+      const color = dir === 'up' ? '#10b981' : dir === 'down' ? '#ef4444' : '#f59e0b'
+      const line = candleSeriesRef.current.createPriceLine({
+        price: Number(target),
+        color: color,
+        lineWidth: 2,
+        lineStyle: LineStyle.Solid,
+        axisLabelVisible: true,
+        title: 'Цель',
+      })
+      priceLinesRef.current.push(line)
+    }
+  }, [analysis, candles])
 
   // The container div is ALWAYS rendered so that:
   //   a) containerRef is always a real, visible DOM node

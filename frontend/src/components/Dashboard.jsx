@@ -244,7 +244,7 @@ export default function Dashboard() {
             <span className="badge badge-muted">{candles.length} candles</span>
           )}
         </div>
-        <CandleChart candles={candles} loading={candlesLoading} ticker={ticker} />
+        <CandleChart candles={candles} loading={candlesLoading} ticker={ticker} analysis={analysis} />
       </div>
 
       {/* Token visualizer if analysis has tokens */}
