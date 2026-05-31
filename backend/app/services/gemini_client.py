@@ -76,28 +76,20 @@ _MOCK_RESPONSE: dict[str, Any] = {
 }
 
 
-def _build_prompt(token_repr: str, ticker: str, recent_news: list[str], period: str = "3mo") -> str:
+def _build_prompt(token_repr: str, ticker: str, recent_news: list[str], forecast_horizon: str = "3 месяца") -> str:
     news_block = ""
     if recent_news:
         headlines = "\n".join(f"  - {h}" for h in recent_news[:5])
         news_block = f"\nПоследние новости по инструменту:\n{headlines}\n"
 
-    # Map API period codes to human-readable Russian labels for the forecast horizon
-    period_map = {
-        "1d": "1 день", "5d": "5 дней", "1mo": "1 месяц",
-        "3mo": "3 месяца", "6mo": "6 месяцев", "1y": "1 год",
-    }
-    horizon = period_map.get(period, period)
-
     return (
-        f"Проанализируй токенизированные данные OHLCV для инструмента {ticker} "
-        f"за период {horizon}.\n\n"
+        f"Проанализируй токенизированные данные OHLCV для инструмента {ticker}.\n\n"
         f"{token_repr}\n"
         f"{news_block}\n"
         f"На основе этих данных:\n"
         f"1. Дай детальный анализ текущей ситуации.\n"
         f"2. Определи ключевые торговые сигналы.\n"
-        f"3. Составь прогноз движения цены на следующий период ({horizon}) "
+        f"3. Составь прогноз движения цены на следующий период ({forecast_horizon}) "
         f"с указанием целевого уровня цены (forecast_price_target) и обоснованием.\n\n"
         f"{_RESPONSE_SCHEMA_HINT}"
     )
@@ -225,7 +217,7 @@ async def analyze_with_gemini(
     token_repr: str,
     ticker: str,
     recent_news: list[str],
-    period: str = "3mo",
+    forecast_horizon: str = "3 месяца",
 ) -> dict[str, Any]:
     """
     Request a structured financial analysis from Gemini (Russian language output).
@@ -234,10 +226,10 @@ async def analyze_with_gemini(
     so callers always receive a consistent dict shape regardless of API availability.
 
     Args:
-        token_repr:   Formatted token string from tokenizer.tokens_to_prompt_repr().
-        ticker:       Ticker symbol, used for context in the prompt.
-        recent_news:  Up to 5 recent headline strings to enrich the prompt.
-        period:       Data period (e.g. '3mo') — used to set the forecast horizon.
+        token_repr:       Formatted token string from tokenizer.tokens_to_prompt_repr().
+        ticker:           Ticker symbol, used for context in the prompt.
+        recent_news:      Up to 5 recent headline strings to enrich the prompt.
+        forecast_horizon: The user-selected horizon (e.g. '1 год', '3 месяца') to guide the AI's forecast.
 
     Returns:
         dict with keys: summary, sentiment, confidence, signals, key_levels,
@@ -250,7 +242,7 @@ async def analyze_with_gemini(
         logger.info("GEMINI_API_KEY not set — returning mock analysis for %s", ticker)
         return dict(_MOCK_RESPONSE)  # copy to prevent mutation of module constant
 
-    prompt = _build_prompt(token_repr, ticker, recent_news, period=period)
+    prompt = _build_prompt(token_repr, ticker, recent_news, forecast_horizon=forecast_horizon)
 
     try:
         result = await _call_with_retry(prompt, settings.gemini_model, settings.gemini_api_key)

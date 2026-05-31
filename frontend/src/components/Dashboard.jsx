@@ -26,6 +26,9 @@ export default function Dashboard() {
   const [ticker, setTicker] = useState('AAPL')
   const [period, setPeriod] = useState('3mo')
   const [interval, setInterval] = useState('1d')
+  const [forecastHorizon, setForecastHorizon] = useState('3 месяца')
+
+  const FORECAST_HORIZONS = ['1 неделя', '1 месяц', '3 месяца', '6 месяцев', '1 год']
 
   const [tickers, setTickers] = useState([])
   const [candles, setCandles] = useState([])
@@ -86,14 +89,14 @@ export default function Dashboard() {
     setAnalysisLoading(true)
     setAnalysisError('')
     try {
-      const r = await analysisApi.runAnalysis(ticker.trim().toUpperCase(), period, interval)
+      const r = await analysisApi.runAnalysis(ticker.trim().toUpperCase(), period, interval, forecastHorizon)
       setAnalysis(r.data)
     } catch (err) {
       setAnalysisError(err.response?.data?.detail || err.message || 'Analysis failed')
     } finally {
       setAnalysisLoading(false)
     }
-  }, [ticker, period, interval])
+  }, [ticker, period, interval, forecastHorizon])
 
   const loadCandles = useCallback(async () => {
     if (!ticker.trim()) return
@@ -182,6 +185,18 @@ export default function Dashboard() {
               onChange={e => setInterval(e.target.value)}
             >
               {INTERVALS.map(i => <option key={i} value={i}>{i}</option>)}
+            </select>
+          </div>
+
+          <div className="form-group" style={{ flex: '0 0 140px' }}>
+            <label className="input-label" style={{ color: 'var(--accent-cyan)' }}>AI Horizon</label>
+            <select
+              className="select-field"
+              value={forecastHorizon}
+              onChange={e => setForecastHorizon(e.target.value)}
+              style={{ borderColor: 'var(--accent-cyan)' }}
+            >
+              {FORECAST_HORIZONS.map(h => <option key={h} value={h}>{h}</option>)}
             </select>
           </div>
 

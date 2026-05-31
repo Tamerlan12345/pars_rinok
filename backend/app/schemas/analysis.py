@@ -10,6 +10,7 @@ class AnalysisRequest(BaseModel):
     ticker: str
     period: str = "1mo"
     interval: str = "1d"
+    forecast_horizon: str = "3 месяца"
 
     @field_validator("ticker", mode="before")
     @classmethod

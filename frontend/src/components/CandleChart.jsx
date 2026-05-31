@@ -224,8 +224,8 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
       keyLevels.forEach(lvl => {
         const line = candleSeriesRef.current.createPriceLine({
           price: Number(lvl),
-          color: 'rgba(6, 182, 212, 0.7)',
-          lineWidth: 1,
+          color: 'rgba(0, 180, 216, 0.9)', // Cyan/Blue factor
+          lineWidth: 2,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: true,
           title: 'Уровень',
@@ -235,14 +235,14 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
     }
 
     if (target != null) {
-      const color = dir === 'up' ? '#10b981' : dir === 'down' ? '#ef4444' : '#f59e0b'
+      // Highlight forecast target with thick bright cyan
       const line = candleSeriesRef.current.createPriceLine({
         price: Number(target),
-        color: color,
-        lineWidth: 2,
+        color: '#00e5ff',
+        lineWidth: 3,
         lineStyle: LineStyle.Solid,
         axisLabelVisible: true,
-        title: 'Цель',
+        title: 'Цель (ИИ)',
       })
       priceLinesRef.current.push(line)
     }

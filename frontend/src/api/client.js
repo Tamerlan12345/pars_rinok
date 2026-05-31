@@ -125,8 +125,8 @@ export const marketApi = {
 }
 
 export const analysisApi = {
-  runAnalysis(ticker, period, interval) {
-    return client.post('/api/analysis/run', { ticker, period, interval })
+  runAnalysis(ticker, period, interval, forecast_horizon = '3 месяца') {
+    return client.post('/api/analysis/run', { ticker, period, interval, forecast_horizon })
       .then(r => withData(r, normalizeAnalysis(r.data)))
   },
 
