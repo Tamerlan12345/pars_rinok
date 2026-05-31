@@ -28,7 +28,6 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
   const chartRef = useRef(null)
   const candleSeriesRef = useRef(null)
   const volumeSeriesRef = useRef(null)
-  const volumeSeriesRef = useRef(null)
   const resizeObserverRef = useRef(null)
   const priceLinesRef = useRef([])
 
@@ -39,7 +38,6 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
     }
     if (chartRef.current) {
       chartRef.current.remove()
-      chartRef.current = null
       chartRef.current = null
       candleSeriesRef.current = null
       volumeSeriesRef.current = null
@@ -194,7 +192,6 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
     const ohlcv   = uniqueSorted.map(({ time, open, high, low, close }) => ({ time, open, high, low, close }))
     const volumes = uniqueSorted.map(({ time, value, color }) => ({ time, value, color }))
 
-    try {
     try {
       candleSeriesRef.current.setData(ohlcv)
       volumeSeriesRef.current.setData(volumes)
