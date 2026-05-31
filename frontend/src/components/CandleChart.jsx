@@ -48,14 +48,14 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
     destroyChart()
 
     const container = containerRef.current
-    const width = container.clientWidth
+    const width = container.clientWidth || container.offsetWidth || 600
     const height = 400
 
     const chart = createChart(container, {
       width,
       height,
       layout: {
-        background: { color: 'var(--bg-primary)' || '#0a0e1a' },
+        background: { color: '#0a0e1a' },
         textColor: '#9ca3af',
         fontSize: 12,
         fontFamily: "'Inter', system-ui, sans-serif"
@@ -103,7 +103,7 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
     })
     candleSeriesRef.current = candleSeries
 
-    // Volume histogram series
+    // Volume histogram series (overlaid on the same pane, pinned to the bottom)
     const volumeSeries = chart.addHistogramSeries({
       color: '#6366f1',
       priceFormat: { type: 'volume' },
@@ -113,7 +113,7 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
     chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } })
     volumeSeriesRef.current = volumeSeries
 
-    // Resize observer
+    // Keep chart width in sync with container
     const observer = new ResizeObserver(entries => {
       const entry = entries[0]
       if (entry && chartRef.current) {
@@ -122,22 +122,25 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
     })
     observer.observe(container)
     resizeObserverRef.current = observer
-
-    return chart
   }, [destroyChart])
 
-  // Init chart once on mount or when loading finishes
-  useEffect(() => {
-    if (!loading && !chartRef.current) {
-      initChart()
-    }
-  }, [loading, initChart])
-
+  // Destroy chart on unmount
   useEffect(() => {
     return destroyChart
   }, [destroyChart])
 
-  // Feed data to chart when candles change
+  // (Re-)initialize the chart whenever loading transitions to false.
+  // The chart container is ALWAYS in the DOM so containerRef is always valid here.
+  // We destroy any stale chart first (handles ticker/interval changes).
+  useEffect(() => {
+    if (loading) return
+    // Always (re)create the chart when loading finishes so we are on the
+    // currently rendered, visible container — never on a stale/hidden div.
+    initChart()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]) // intentionally omit initChart — it is stable but we only want this on loading flip
+
+  // Feed data to chart whenever candles array changes
   useEffect(() => {
     if (!candleSeriesRef.current || !volumeSeriesRef.current) return
     if (candles.length === 0) {
@@ -146,37 +149,29 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
       return
     }
 
-    // Normalize, sort numerically, and deduplicate
+    // Sort by unix timestamp ascending, then deduplicate by calendar day
     const sorted = [...candles].sort((a, b) => Number(a.time) - Number(b.time))
 
-    // For lightweight-charts, daily bars MUST have unique 'YYYY-MM-DD' strings.
-    // Intraday bars must be unique UNIX timestamps.
-    // We will just convert all to unique 'YYYY-MM-DD' string dates to be absolutely safe for daily/weekly.
-    // For 1h, etc., string format works too if we provide YYYY-MM-DD, but YYYY-MM-DD HH:MM is needed?
-    // Actually, lightweight-charts expects YYYY-MM-DD strings for daily, and UNIX timestamps for intraday.
-    // Let's use string 'YYYY-MM-DD' since our fallback is mostly 1d interval anyway.
     const uniqueSorted = []
     const seenTimes = new Set()
-    
+
     for (const c of sorted) {
-      // Create a valid date object
       const d = new Date(Number(c.time) * 1000)
       if (Number.isNaN(d.getTime())) continue
 
-      // Format to YYYY-MM-DD
+      // lightweight-charts requires YYYY-MM-DD strings for daily data
       const timeStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
-      
+
       if (seenTimes.has(timeStr)) continue
       seenTimes.add(timeStr)
 
-      // Ensure valid candle math
       const o = Number(c.open)
       let h = Number(c.high)
       let l = Number(c.low)
       const cl = Number(c.close)
       const v = Number(c.volume) || 0
 
-      // Fix impossible wicks that cause lightweight-charts to crash
+      // Clamp wicks to valid OHLC range — lightweight-charts rejects impossible values
       if (h < o) h = o
       if (h < cl) h = cl
       if (l > o) l = o
@@ -186,52 +181,44 @@ export default function CandleChart({ candles = [], loading = false, ticker = ''
 
       uniqueSorted.push({
         time: timeStr,
-        open: o,
-        high: h,
-        low: l,
-        close: cl,
+        open: o, high: h, low: l, close: cl,
         value: v,
         color: cl >= o ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'
       })
     }
 
-    const ohlcv = uniqueSorted.map(c => ({
-      time: c.time, open: c.open, high: c.high, low: c.low, close: c.close
-    }))
-
-    const volumes = uniqueSorted.map(c => ({
-      time: c.time, value: c.value, color: c.color
-    }))
+    const ohlcv   = uniqueSorted.map(({ time, open, high, low, close }) => ({ time, open, high, low, close }))
+    const volumes = uniqueSorted.map(({ time, value, color }) => ({ time, value, color }))
 
     try {
-      if (ohlcv.length > 0) {
-        candleSeriesRef.current.setData(ohlcv)
-        volumeSeriesRef.current.setData(volumes)
-        chartRef.current?.timeScale().fitContent()
-      }
+      candleSeriesRef.current.setData(ohlcv)
+      volumeSeriesRef.current.setData(volumes)
+      chartRef.current?.timeScale().fitContent()
     } catch (err) {
-      // Lightweight-charts throws if data is not monotonically increasing —
-      // this is a data quality issue from upstream, not a render bug.
+      // Data quality issue from upstream (non-monotonic timestamps), not a render bug
       console.warn('[CandleChart] setData error:', err.message)
     }
   }, [candles])
 
-  if (loading) return <ChartSkeleton />
-  if (!loading && candles.length === 0) {
-    return (
-      <>
-        <EmptyState ticker={ticker} />
-        {/* Keep the container in DOM so the chart stays initialized */}
-        <div ref={containerRef} style={{ display: 'none' }} />
-      </>
-    )
-  }
-
+  // The container div is ALWAYS rendered so that:
+  //   a) containerRef is always a real, visible DOM node
+  //   b) initChart never runs against a zero-width hidden div
+  // Skeleton and EmptyState are rendered as absolute overlays on top.
   return (
     <div
       className="chart-container"
-      style={{ animation: 'fadeIn 0.3s ease' }}
+      style={{ position: 'relative', animation: 'fadeIn 0.3s ease', minHeight: '400px' }}
     >
+      {loading && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
+          <ChartSkeleton />
+        </div>
+      )}
+      {!loading && candles.length === 0 && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
+          <EmptyState ticker={ticker} />
+        </div>
+      )}
       <div ref={containerRef} className="chart-inner" style={{ height: '400px' }} />
     </div>
   )
