@@ -48,6 +48,7 @@
 | 2 | Frontend: React 18 + Vite SPA | Feature | Complete | frontend/** | G1-G4 | 14 files; glassmorphism dark theme; Railway-ready |
 | 3 | Fix OHLCV fetch via Yahoo Chart API & Frontend chart rendering | Fix | Complete | backend/app/services/data_fetcher.py, frontend/src/components/CandleChart.jsx | G1-G4 | Bypassed Yahoo blocks, fixed `asyncpg` offset DataError, fixed `lightweight-charts` rendering |
 | 4 | Fix CandleChart race condition — chart created on display:none div | Fix | Complete | frontend/src/components/CandleChart.jsx | G1,G3 | Root cause: conditional render put containerRef on hidden zero-width div; chart was never recreated on real container. Fix: always render chart-inner div; skeleton/empty overlay via position:absolute; reinit chart on every loading→false transition |
+| 5 | Russian AI analysis + forward price forecast + visual redesign | Feature | Complete | backend/app/services/gemini_client.py, backend/app/routers/analysis.py, backend/app/models/analysis.py, backend/app/schemas/analysis.py, backend/alembic/versions/002_forecast_fields.py, frontend/src/components/AIAnalysisPanel.jsx, frontend/src/api/client.js | G1-G4 | Gemini now responds in Russian; prompt asks for forward price forecast (forecast_direction, forecast_price_target, forecast_period, forecast_rationale); new DB columns via migration 002; AIAnalysisPanel fully redesigned with ForecastCard, Russian labels, color-coded confidence |
 
 ## Known Issues & Technical Debt
 

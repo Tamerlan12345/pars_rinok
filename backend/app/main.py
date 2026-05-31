@@ -1,6 +1,8 @@
 """FastAPI application entrypoint for Centras Tokenizer."""
 from __future__ import annotations
 
+import subprocess
+import sys
 from urllib.parse import urlsplit, urlunsplit
 
 import structlog
@@ -80,6 +82,25 @@ app.include_router(logs.router, prefix="/api")       # GET /api/logs/...
 # -------------------------------------------------------------------
 @app.on_event("startup")
 async def startup() -> None:
+    # Run Alembic migrations before accepting any requests.
+    # This is idempotent: if the DB is already up-to-date, it exits instantly.
+    # Keeps Railway deployments self-migrating without a separate release phase.
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", "head"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode == 0:
+            logger.info("alembic_migrations_applied", output=result.stdout.strip() or "already up to date")
+        else:
+            # Log but do not crash — create_all below may still bring up a fresh DB
+            logger.error("alembic_migration_failed", stderr=result.stderr.strip())
+    except Exception as exc:
+        logger.error("alembic_migration_error", error=str(exc))
+
+    # Fallback: create any tables not yet managed by Alembic (dev / SQLite)
     await init_db()
     logger.info(
         "centras_startup",
