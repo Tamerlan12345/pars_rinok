@@ -37,9 +37,16 @@ class AnalysisRead(BaseModel):
     gemini_signals: list[dict[str, Any]] | None
     gemini_sentiment: str | None
     gemini_confidence: float | None
+    gemini_key_levels: list[Any] | None = None
+    gemini_risk_factors: list[str] | None = None
+    forecast_direction: str | None = None
+    forecast_price_target: float | None = None
+    forecast_period: str | None = None
+    forecast_rationale: str | None = None
     mock_mode: bool
     created_at: datetime
 
 
 class AnalysisResponse(AnalysisRead):
     message: str = "Analysis complete"
+

@@ -35,7 +35,13 @@ function normalizeAnalysis(item) {
     summary: item.summary ?? item.gemini_summary,
     signals: item.signals ?? item.gemini_signals ?? [],
     sentiment: item.sentiment ?? item.gemini_sentiment,
-    confidence: item.confidence ?? item.gemini_confidence
+    confidence: item.confidence ?? item.gemini_confidence,
+    key_levels: item.key_levels ?? item.gemini_key_levels ?? [],
+    risk_factors: item.risk_factors ?? item.gemini_risk_factors ?? [],
+    forecast_direction: item.forecast_direction ?? null,
+    forecast_price_target: item.forecast_price_target ?? null,
+    forecast_period: item.forecast_period ?? null,
+    forecast_rationale: item.forecast_rationale ?? null,
   }
 }
 

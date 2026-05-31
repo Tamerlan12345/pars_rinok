@@ -65,7 +65,7 @@ async def run_analysis(
     recent_headlines = [row[0] for row in news_result.all()]
 
     # Step 4: Gemini analysis
-    gemini_result = await analyze_with_gemini(token_repr, body.ticker, recent_headlines)
+    gemini_result = await analyze_with_gemini(token_repr, body.ticker, recent_headlines, period=body.period)
     mock_mode = gemini_result.get("mock_mode", False)
 
     # Step 5: persist analysis
@@ -80,6 +80,12 @@ async def run_analysis(
         gemini_signals=gemini_result.get("signals", []),
         gemini_sentiment=gemini_result.get("sentiment"),
         gemini_confidence=gemini_result.get("confidence"),
+        gemini_key_levels=gemini_result.get("key_levels", []),
+        gemini_risk_factors=gemini_result.get("risk_factors", []),
+        forecast_direction=gemini_result.get("forecast_direction"),
+        forecast_price_target=gemini_result.get("forecast_price_target"),
+        forecast_period=gemini_result.get("forecast_period"),
+        forecast_rationale=gemini_result.get("forecast_rationale"),
         mock_mode=mock_mode,
     )
     db.add(analysis)
@@ -113,9 +119,15 @@ async def run_analysis(
         gemini_signals=analysis.gemini_signals,
         gemini_sentiment=analysis.gemini_sentiment,
         gemini_confidence=analysis.gemini_confidence,
+        gemini_key_levels=analysis.gemini_key_levels,
+        gemini_risk_factors=analysis.gemini_risk_factors,
+        forecast_direction=analysis.forecast_direction,
+        forecast_price_target=analysis.forecast_price_target,
+        forecast_period=analysis.forecast_period,
+        forecast_rationale=analysis.forecast_rationale,
         mock_mode=analysis.mock_mode,
         created_at=analysis.created_at,
-        message="Analysis complete" if not mock_mode else "Analysis complete (mock mode — configure GEMINI_API_KEY)",
+        message="Анализ завершён" if not mock_mode else "Анализ завершён (демо-режим — настройте GEMINI_API_KEY)",
     )
 
 

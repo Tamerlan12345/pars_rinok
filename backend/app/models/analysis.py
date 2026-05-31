@@ -22,6 +22,13 @@ class Analysis(Base):
     gemini_signals: Mapped[list | None] = mapped_column(JSON, nullable=True)
     gemini_sentiment: Mapped[str | None] = mapped_column(String(20), nullable=True)
     gemini_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gemini_key_levels: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    gemini_risk_factors: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Forward price forecast fields
+    forecast_direction: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    forecast_price_target: Mapped[float | None] = mapped_column(Float, nullable=True)
+    forecast_period: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    forecast_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
     mock_mode: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False),
@@ -32,3 +39,4 @@ class Analysis(Base):
 
     def __repr__(self) -> str:
         return f"<Analysis {self.ticker_symbol} {self.period} {self.created_at}>"
+
