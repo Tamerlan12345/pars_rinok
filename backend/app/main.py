@@ -95,8 +95,26 @@ async def startup() -> None:
         if result.returncode == 0:
             logger.info("alembic_migrations_applied", output=result.stdout.strip() or "already up to date")
         else:
-            # Log but do not crash — create_all below may still bring up a fresh DB
-            logger.error("alembic_migration_failed", stderr=result.stderr.strip())
+            stderr = result.stderr
+            # If the database was created by SQLAlchemy create_all before Alembic was introduced,
+            # applying 001_initial will fail because 'tickers' already exists.
+            if "DuplicateTableError" in stderr and "tickers" in stderr:
+                logger.info("alembic_stamping_existing_db", message="Found existing tables. Stamping 001_initial...")
+                subprocess.run([sys.executable, "-m", "alembic", "stamp", "001_initial"], check=True)
+                
+                # Retry upgrade to apply any pending migrations (e.g. 002_forecast_fields)
+                result2 = subprocess.run(
+                    [sys.executable, "-m", "alembic", "upgrade", "head"],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                if result2.returncode == 0:
+                    logger.info("alembic_migrations_applied_after_stamp", output=result2.stdout.strip() or "already up to date")
+                else:
+                    logger.error("alembic_migration_failed_after_stamp", stderr=result2.stderr.strip())
+            else:
+                logger.error("alembic_migration_failed", stderr=stderr.strip())
     except Exception as exc:
         logger.error("alembic_migration_error", error=str(exc))
 
